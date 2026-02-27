@@ -1,0 +1,21 @@
+# Virtual environment
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Cache directories
+cache/api/*
+cache/reports/*
+!cache/api/.gitkeep
+!cache/reports/.gitkeep
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
