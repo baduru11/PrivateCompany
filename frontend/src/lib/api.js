@@ -9,3 +9,15 @@ export async function fetchHistory() {
   if (!resp.ok) throw new Error("Failed to fetch history");
   return resp.json();
 }
+
+export async function fetchReport(filename) {
+  const resp = await fetch(getApiUrl(`/api/report/${filename}`));
+  if (!resp.ok) throw new Error("Failed to fetch report");
+  return resp.json();
+}
+
+export async function deleteReport(filename) {
+  const resp = await fetch(getApiUrl(`/api/report/${filename}`), { method: "DELETE" });
+  if (!resp.ok) throw new Error("Failed to delete report");
+  return resp.json();
+}
