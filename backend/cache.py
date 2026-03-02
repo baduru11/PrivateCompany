@@ -47,6 +47,19 @@ class CacheManager:
         path = self.report_dir / f"{mode}_{self._hash_key(mode, query)}.json"
         path.write_text(json.dumps(meta, default=str), encoding="utf-8")
 
+    def get_report_by_filename(self, filename: str) -> dict | None:
+        path = self.report_dir / filename
+        if path.exists() and path.parent == self.report_dir:
+            return json.loads(path.read_text(encoding="utf-8"))
+        return None
+
+    def delete_report(self, filename: str) -> bool:
+        path = self.report_dir / filename
+        if path.exists() and path.parent == self.report_dir:
+            path.unlink()
+            return True
+        return False
+
     def list_reports(self) -> list[dict]:
         reports = []
         for path in self.report_dir.glob("*.json"):
