@@ -1,19 +1,26 @@
 import { useState, useMemo, useCallback } from "react";
+import {
+  LayoutGrid,
+  Network,
+  TrendingUp,
+  Building2,
+  DollarSign,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  ArrowRight,
+} from "lucide-react";
 import ForceGraph from "./ForceGraph";
 import CompanySidebar from "./CompanySidebar";
 import FilterChips from "./FilterChips";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { cn } from "../../lib/utils";
 
-/**
- * Determine if a company's funding stage matches a stage filter.
- * Stages: Seed, A, B, C+ (where C+ includes C, D, E, etc.)
- */
 function matchesStage(company, stages) {
   if (stages.length === 0) return true;
-  const stage = (
-    company.funding_stage ||
-    company.stage ||
-    ""
-  ).toLowerCase();
+  const stage = (company.funding_stage || company.stage || "").toLowerCase();
   return stages.some((s) => {
     const sl = s.toLowerCase();
     if (sl === "seed") return stage.includes("seed");
@@ -26,13 +33,10 @@ function matchesStage(company, stages) {
   });
 }
 
-/**
- * Determine if a company's founding year matches a year range filter.
- */
 function matchesYear(company, years) {
   if (years.length === 0) return true;
   const yr = Number(company.founding_year || company.founded);
-  if (!yr) return years.length === 0; // Unknown year only matches if no filter
+  if (!yr) return years.length === 0;
   return years.some((range) => {
     if (range === "2020+") return yr >= 2020;
     if (range === "2015-19") return yr >= 2015 && yr <= 2019;
@@ -42,32 +46,124 @@ function matchesYear(company, years) {
   });
 }
 
+function formatFunding(num) {
+  if (!num || num === 0) return "N/A";
+  if (num >= 1e9) return `$${(num / 1e9).toFixed(1)}B`;
+  if (num >= 1e6) return `$${(num / 1e6).toFixed(1)}M`;
+  if (num >= 1e3) return `$${(num / 1e3).toFixed(0)}K`;
+  return `$${num}`;
+}
+
+function confidenceColor(c) {
+  if (c == null) return "text-zinc-500";
+  if (c >= 0.7) return "text-emerald-400";
+  if (c >= 0.4) return "text-amber-400";
+  return "text-red-400";
+}
+
+function confidenceBg(c) {
+  if (c == null) return "bg-zinc-500/10";
+  if (c >= 0.7) return "bg-emerald-500/10";
+  if (c >= 0.4) return "bg-amber-500/10";
+  return "bg-red-500/10";
+}
+
 /**
- * Main Explore mode view. Composes the force graph, filter chips,
- * company sidebar, and a context bar showing sector and company count.
- *
- * Transforms API ExploreReport data into the format needed by ForceGraph.
+ * Stat card component for the metrics bar.
  */
+function StatCard({ icon: Icon, label, value, sub }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-[hsl(var(--card))] border border-[hsl(var(--border))]">
+      <div className="p-2 rounded-md bg-[hsl(217,91%,60%)]/10">
+        <Icon className="w-4 h-4 text-[hsl(217,91%,60%)]" />
+      </div>
+      <div>
+        <p className="text-lg font-bold text-[hsl(var(--foreground))] leading-tight">{value}</p>
+        <p className="text-[11px] text-[hsl(var(--muted-foreground))]">{label}</p>
+      </div>
+      {sub && (
+        <p className="text-[10px] text-[hsl(var(--muted-foreground))] ml-auto">{sub}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Company row in the table view.
+ */
+function CompanyRow({ company, index, onSelect, onDeepDive }) {
+  return (
+    <tr
+      onClick={() => onSelect(company)}
+      className="group cursor-pointer border-b border-[hsl(var(--border))]/50 hover:bg-[hsl(var(--muted))]/50 transition-colors"
+    >
+      <td className="py-3 px-4 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono w-5">{index + 1}</span>
+          <span className="font-medium text-[hsl(var(--foreground))]">{company.name}</span>
+        </div>
+      </td>
+      <td className="py-3 px-3">
+        <Badge variant="outline" className="text-[10px] font-normal">
+          {company.sub_sector || "—"}
+        </Badge>
+      </td>
+      <td className="py-3 px-3 text-sm font-mono text-[hsl(var(--foreground))]">
+        {company.funding || formatFunding(company.funding_numeric)}
+      </td>
+      <td className="py-3 px-3 text-sm text-[hsl(var(--muted-foreground))]">
+        {company.funding_stage || "—"}
+      </td>
+      <td className="py-3 px-3 text-sm text-[hsl(var(--muted-foreground))]">
+        {company.founding_year || "—"}
+      </td>
+      <td className="py-3 px-3 text-sm text-[hsl(var(--muted-foreground))]">
+        {company.headquarters || "—"}
+      </td>
+      <td className="py-3 px-3">
+        <div className={cn("text-xs font-mono", confidenceColor(company.confidence))}>
+          {company.confidence != null ? `${Math.round(company.confidence * 100)}%` : "—"}
+        </div>
+      </td>
+      <td className="py-3 px-3">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="opacity-0 group-hover:opacity-100 transition-opacity h-7 text-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeepDive(company);
+          }}
+        >
+          Deep Dive <ArrowRight className="w-3 h-3 ml-1" />
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
 export default function ExploreView({ data, onDeepDive }) {
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [viewMode, setViewMode] = useState("graph"); // "graph" | "table"
+  const [summaryExpanded, setSummaryExpanded] = useState(true);
   const [activeFilters, setActiveFilters] = useState({
     subSectors: [],
     stages: [],
     years: [],
   });
+  const [tableSortKey, setTableSortKey] = useState("funding_numeric");
+  const [tableSortDir, setTableSortDir] = useState("desc");
 
-  // Extract companies from the data
   const allCompanies = useMemo(() => {
     if (!data) return [];
-    // Support both data.companies and data.result.companies shapes
-    const companies = data.companies || data.result?.companies || [];
+    const companies = data.report?.companies || data.companies || data.result?.companies || [];
     return companies.map((c, i) => ({
       id: c.id || c.name || `company-${i}`,
       name: c.name || "Unknown",
       sub_sector: c.sub_sector || c.sector || "",
       funding_numeric: c.funding_numeric || 0,
-      funding: c.funding || c.funding_amount || "",
+      funding: c.funding || c.funding_total || c.funding_amount || "",
       funding_stage: c.funding_stage || c.stage || "",
       founding_year: c.founding_year || c.founded || "",
       description: c.description || "",
@@ -77,32 +173,48 @@ export default function ExploreView({ data, onDeepDive }) {
     }));
   }, [data]);
 
-  // Extract unique sub-sectors
   const subSectors = useMemo(() => {
     const set = new Set(allCompanies.map((c) => c.sub_sector).filter(Boolean));
     return [...set].sort();
   }, [allCompanies]);
 
-  // Filter companies based on active filters
   const filteredCompanies = useMemo(() => {
     return allCompanies.filter((c) => {
-      // Sub-sector filter
-      if (
-        activeFilters.subSectors.length > 0 &&
-        !activeFilters.subSectors.includes(c.sub_sector)
-      ) {
-        return false;
-      }
-      // Stage filter
+      if (activeFilters.subSectors.length > 0 && !activeFilters.subSectors.includes(c.sub_sector)) return false;
       if (!matchesStage(c, activeFilters.stages)) return false;
-      // Year filter
       if (!matchesYear(c, activeFilters.years)) return false;
       return true;
     });
   }, [allCompanies, activeFilters]);
 
-  // Sector name from data
-  const sectorName = data?.sector || data?.query || "Market Landscape";
+  const sortedCompanies = useMemo(() => {
+    return [...filteredCompanies].sort((a, b) => {
+      let av = a[tableSortKey];
+      let bv = b[tableSortKey];
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = bv.toLowerCase();
+      if (av < bv) return tableSortDir === "asc" ? -1 : 1;
+      if (av > bv) return tableSortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [filteredCompanies, tableSortKey, tableSortDir]);
+
+  // Aggregate stats
+  const stats = useMemo(() => {
+    const totalFunding = filteredCompanies.reduce((sum, c) => sum + (c.funding_numeric || 0), 0);
+    const avgConfidence = filteredCompanies.length > 0
+      ? filteredCompanies.reduce((sum, c) => sum + (c.confidence || 0), 0) / filteredCompanies.length
+      : 0;
+    const sectorCounts = {};
+    filteredCompanies.forEach((c) => {
+      const s = c.sub_sector || "Unknown";
+      sectorCounts[s] = (sectorCounts[s] || 0) + 1;
+    });
+    return { totalFunding, avgConfidence, sectorCounts };
+  }, [filteredCompanies]);
+
+  const sectorName = data?.report?.sector || data?.sector || data?.report?.query || data?.query || "Market Landscape";
+  const summary = data?.report?.summary || data?.summary || "";
 
   const handleNodeClick = useCallback((node) => {
     setSelectedCompany(node);
@@ -115,27 +227,117 @@ export default function ExploreView({ data, onDeepDive }) {
   }, []);
 
   const handleDeepDive = useCallback(
-    (company) => {
-      onDeepDive?.(company);
-    },
+    (company) => { onDeepDive?.(company); },
     [onDeepDive]
+  );
+
+  const handleSort = (key) => {
+    if (tableSortKey === key) {
+      setTableSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setTableSortKey(key);
+      setTableSortDir("desc");
+    }
+  };
+
+  const SortHeader = ({ label, sortKey }) => (
+    <th
+      onClick={() => handleSort(sortKey)}
+      className="py-2.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] cursor-pointer hover:text-[hsl(var(--foreground))] transition-colors text-left select-none"
+    >
+      <span className="flex items-center gap-1">
+        {label}
+        {tableSortKey === sortKey && (
+          tableSortDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+        )}
+      </span>
+    </th>
   );
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
-      {/* Context bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[hsl(var(--card))] border-b border-[hsl(var(--border))]">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-[hsl(var(--foreground))]">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[hsl(var(--card))] border-b border-[hsl(var(--border))]">
+        <div className="flex items-center gap-3">
+          <h2 className="text-base font-bold text-[hsl(var(--foreground))]">
             {sectorName}
           </h2>
-          <span className="text-xs text-[hsl(var(--muted-foreground))]">
-            {filteredCompanies.length} compan{filteredCompanies.length === 1 ? "y" : "ies"} found
-            {filteredCompanies.length !== allCompanies.length && (
-              <> (of {allCompanies.length} total)</>
-            )}
-          </span>
+          <Badge variant="outline" className="text-[10px] font-mono">
+            {filteredCompanies.length} compan{filteredCompanies.length === 1 ? "y" : "ies"}
+            {filteredCompanies.length !== allCompanies.length && ` / ${allCompanies.length}`}
+          </Badge>
         </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setViewMode("graph")}
+            className={cn(
+              "p-2 rounded-md transition-colors",
+              viewMode === "graph"
+                ? "bg-[hsl(217,91%,60%)]/15 text-[hsl(217,91%,60%)]"
+                : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+            )}
+            title="Graph view"
+          >
+            <Network className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setViewMode("table")}
+            className={cn(
+              "p-2 rounded-md transition-colors",
+              viewMode === "table"
+                ? "bg-[hsl(217,91%,60%)]/15 text-[hsl(217,91%,60%)]"
+                : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+            )}
+            title="Table view"
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Summary + stats panel */}
+      <div className="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]/50">
+        {/* Stats row */}
+        <div className="grid grid-cols-4 gap-3 px-4 py-3">
+          <StatCard
+            icon={Building2}
+            label="Companies"
+            value={filteredCompanies.length}
+          />
+          <StatCard
+            icon={DollarSign}
+            label="Total Funding"
+            value={formatFunding(stats.totalFunding)}
+          />
+          <StatCard
+            icon={BarChart3}
+            label="Sub-Sectors"
+            value={Object.keys(stats.sectorCounts).length}
+          />
+          <StatCard
+            icon={TrendingUp}
+            label="Avg Confidence"
+            value={`${Math.round(stats.avgConfidence * 100)}%`}
+          />
+        </div>
+
+        {/* Summary text */}
+        {summary && (
+          <div className="px-4 pb-3">
+            <button
+              onClick={() => setSummaryExpanded((v) => !v)}
+              className="flex items-center gap-1.5 text-[11px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors mb-1 cursor-pointer"
+            >
+              {summaryExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              AI Summary
+            </button>
+            {summaryExpanded && (
+              <p className="text-sm text-[hsl(var(--foreground))]/80 leading-relaxed pl-4 border-l-2 border-[hsl(217,91%,60%)]/30">
+                {summary}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filter chips */}
@@ -147,27 +349,62 @@ export default function ExploreView({ data, onDeepDive }) {
 
       {/* Main content area */}
       <div className="flex flex-1 relative overflow-hidden">
-        {/* Force graph */}
-        <div
-          className="flex-1 transition-all duration-300"
-          style={{
-            marginRight: sidebarOpen ? "320px" : "0",
-          }}
-        >
-          <ForceGraph
-            companies={filteredCompanies}
-            onNodeClick={handleNodeClick}
-            selectedNode={selectedCompany?.id || selectedCompany?.name}
-          />
-        </div>
-
-        {/* Company sidebar */}
-        <CompanySidebar
-          company={selectedCompany}
-          isOpen={sidebarOpen}
-          onClose={handleCloseSidebar}
-          onDeepDive={handleDeepDive}
-        />
+        {viewMode === "graph" ? (
+          <>
+            <div
+              className="flex-1 transition-all duration-300"
+              style={{ marginRight: sidebarOpen ? "320px" : "0" }}
+            >
+              <ForceGraph
+                companies={filteredCompanies}
+                onNodeClick={handleNodeClick}
+                selectedNode={selectedCompany?.id || selectedCompany?.name}
+              />
+            </div>
+            <CompanySidebar
+              company={selectedCompany}
+              isOpen={sidebarOpen}
+              onClose={handleCloseSidebar}
+              onDeepDive={handleDeepDive}
+            />
+          </>
+        ) : (
+          <div className="flex-1 overflow-auto">
+            <table className="w-full">
+              <thead className="sticky top-0 bg-[hsl(var(--card))] border-b border-[hsl(var(--border))] z-10">
+                <tr>
+                  <SortHeader label="Company" sortKey="name" />
+                  <SortHeader label="Sector" sortKey="sub_sector" />
+                  <SortHeader label="Funding" sortKey="funding_numeric" />
+                  <SortHeader label="Stage" sortKey="funding_stage" />
+                  <SortHeader label="Founded" sortKey="founding_year" />
+                  <SortHeader label="HQ" sortKey="headquarters" />
+                  <SortHeader label="Confidence" sortKey="confidence" />
+                  <th className="py-2.5 px-3 w-24"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedCompanies.map((c, i) => (
+                  <CompanyRow
+                    key={c.id}
+                    company={c}
+                    index={i}
+                    onSelect={(company) => {
+                      setSelectedCompany(company);
+                      setSidebarOpen(true);
+                    }}
+                    onDeepDive={handleDeepDive}
+                  />
+                ))}
+              </tbody>
+            </table>
+            {sortedCompanies.length === 0 && (
+              <div className="flex items-center justify-center h-40 text-sm text-[hsl(var(--muted-foreground))]">
+                No companies match the current filters.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,25 +1,11 @@
 import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 
-/**
- * Muted color palette for sub-sectors (Bloomberg-style: professional, not neon).
- */
 const SUB_SECTOR_COLORS = [
-  "#5B8DEF", // steel blue
-  "#6FCF97", // sage green
-  "#F2994A", // muted orange
-  "#BB6BD9", // soft purple
-  "#56CCF2", // light cyan
-  "#EB5757", // muted red
-  "#F2C94C", // muted gold
-  "#27AE60", // forest green
-  "#9B51E0", // violet
-  "#2D9CDB", // azure
+  "#5B8DEF", "#6FCF97", "#F2994A", "#BB6BD9", "#56CCF2",
+  "#EB5757", "#F2C94C", "#27AE60", "#9B51E0", "#2D9CDB",
 ];
 
-/**
- * Map sub_sector name to a consistent color from the palette.
- */
 function getSectorColor(subSector, sectorMap) {
   if (!subSector) return SUB_SECTOR_COLORS[0];
   if (!sectorMap.has(subSector)) {
@@ -28,20 +14,12 @@ function getSectorColor(subSector, sectorMap) {
   return sectorMap.get(subSector);
 }
 
-/**
- * Map funding_numeric to node radius (min 5, max 30).
- */
 function fundingToRadius(funding, maxFunding) {
   if (!funding || !maxFunding) return 8;
   const normalized = Math.min(funding / maxFunding, 1);
-  return 5 + normalized * 25;
+  return 6 + normalized * 28;
 }
 
-/**
- * Interactive 2D force graph showing companies as nodes.
- * Nodes are sized by funding, colored by sub-sector.
- * Companies in the same sub-sector are linked with faint lines.
- */
 export default function ForceGraph({
   companies = [],
   onNodeClick,
@@ -53,7 +31,6 @@ export default function ForceGraph({
   const [hoveredNode, setHoveredNode] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
-  // Observe container size
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -73,7 +50,6 @@ export default function ForceGraph({
     return Math.max(...companies.map((c) => c.funding_numeric || 0), 1);
   }, [companies]);
 
-  // Build graph data: nodes + links between same sub_sector companies
   const graphData = useMemo(() => {
     const sectorColorMap = new Map();
     const nodes = companies.map((c) => ({
@@ -88,13 +64,11 @@ export default function ForceGraph({
       funding_stage: c.funding_stage || c.stage,
       headquarters: c.headquarters || c.hq,
       key_investors: c.key_investors,
-      // Pre-compute display values
       color: getSectorColor(c.sub_sector, sectorColorMap),
       radius: fundingToRadius(c.funding_numeric, maxFunding),
       initial: c.name ? c.name.charAt(0).toUpperCase() : "?",
     }));
 
-    // Create links between companies in the same sub_sector
     const links = [];
     const bySector = {};
     nodes.forEach((n) => {
@@ -110,46 +84,69 @@ export default function ForceGraph({
       }
     });
 
-    return { nodes, links };
+    return { nodes, links, sectorColorMap };
   }, [companies, maxFunding]);
 
-  // Custom node renderer
+  // Extract legend from sector color map
+  const sectorLegend = useMemo(() => {
+    const entries = [];
+    if (graphData.sectorColorMap) {
+      graphData.sectorColorMap.forEach((color, name) => {
+        entries.push({ name, color });
+      });
+    }
+    return entries;
+  }, [graphData]);
+
   const nodeCanvasObject = useCallback(
     (node, ctx) => {
       const r = node.radius || 8;
-      const isSelected =
-        selectedNode && (selectedNode === node.id || selectedNode === node.name);
+      const isSelected = selectedNode && (selectedNode === node.id || selectedNode === node.name);
+      const isHovered = hoveredNode && (hoveredNode.id === node.id);
 
-      // Outer ring
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, r + 2, 0, 2 * Math.PI);
-      ctx.fillStyle = isSelected
-        ? "rgba(91,141,239,0.5)"
-        : `${node.color}33`;
-      ctx.fill();
+      // Glow effect for hovered/selected nodes
+      if (isSelected || isHovered) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, r + 6, 0, 2 * Math.PI);
+        const gradient = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 6);
+        gradient.addColorStop(0, `${node.color}44`);
+        gradient.addColorStop(1, `${node.color}00`);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
 
-      // Main circle
+      // Main circle with gradient
       ctx.beginPath();
       ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = `${node.color}CC`;
+      const grad = ctx.createRadialGradient(
+        node.x - r * 0.3, node.y - r * 0.3, r * 0.1,
+        node.x, node.y, r
+      );
+      grad.addColorStop(0, `${node.color}FF`);
+      grad.addColorStop(1, `${node.color}AA`);
+      ctx.fillStyle = grad;
       ctx.fill();
 
       // Border
-      ctx.strokeStyle = isSelected ? "#5B8DEF" : node.color;
-      ctx.lineWidth = isSelected ? 2 : 1;
+      ctx.strokeStyle = isSelected ? "#FFFFFF" : `${node.color}88`;
+      ctx.lineWidth = isSelected ? 2.5 : 1;
       ctx.stroke();
 
       // Initial letter
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#FFFFFF";
-      ctx.font = `bold ${Math.max(r * 0.7, 8)}px -apple-system, system-ui, sans-serif`;
+      ctx.font = `bold ${Math.max(r * 0.65, 9)}px -apple-system, system-ui, sans-serif`;
       ctx.fillText(node.initial, node.x, node.y);
+
+      // Company name label below node
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.font = `${Math.max(Math.min(r * 0.5, 11), 8)}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText(node.name, node.x, node.y + r + 10);
     },
-    [selectedNode]
+    [selectedNode, hoveredNode]
   );
 
-  // Node pointer area for hit detection
   const nodePointerAreaPaint = useCallback((node, color, ctx) => {
     const r = node.radius || 8;
     ctx.beginPath();
@@ -158,26 +155,19 @@ export default function ForceGraph({
     ctx.fill();
   }, []);
 
-  // Link styling: very faint lines
-  const linkColor = useCallback(() => "rgba(255,255,255,0.05)", []);
+  const linkColor = useCallback(() => "rgba(255,255,255,0.04)", []);
 
   const handleNodeHover = useCallback((node) => {
     setHoveredNode(node || null);
-    // Change cursor
     const el = containerRef.current;
-    if (el) {
-      el.style.cursor = node ? "pointer" : "default";
-    }
+    if (el) el.style.cursor = node ? "pointer" : "default";
   }, []);
 
   const handleNodeClick = useCallback(
-    (node) => {
-      onNodeClick?.(node);
-    },
+    (node) => { onNodeClick?.(node); },
     [onNodeClick]
   );
 
-  // Track mouse for tooltip position
   const handleMouseMove = useCallback((e) => {
     setTooltipPos({ x: e.clientX, y: e.clientY });
   }, []);
@@ -190,7 +180,7 @@ export default function ForceGraph({
     >
       <ForceGraph2D
         ref={graphRef}
-        graphData={graphData}
+        graphData={{ nodes: graphData.nodes, links: graphData.links }}
         width={dimensions.width}
         height={dimensions.height}
         backgroundColor="transparent"
@@ -208,31 +198,83 @@ export default function ForceGraph({
         enablePanInteraction={true}
       />
 
+      {/* Sector legend */}
+      {sectorLegend.length > 0 && (
+        <div className="absolute top-3 left-3 px-3 py-2.5 rounded-lg bg-[hsl(var(--card))]/90 backdrop-blur-sm border border-[hsl(var(--border))] shadow-lg">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">
+            Sectors
+          </p>
+          <div className="space-y-1.5">
+            {sectorLegend.map(({ name, color }) => (
+              <div key={name} className="flex items-center gap-2">
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="text-[11px] text-[hsl(var(--foreground))]/80 truncate max-w-[140px]">
+                  {name}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Funding size legend */}
+      <div className="absolute bottom-3 left-3 px-3 py-2 rounded-lg bg-[hsl(var(--card))]/90 backdrop-blur-sm border border-[hsl(var(--border))] shadow-lg">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1.5">
+          Node Size = Funding
+        </p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <span className="inline-block w-2 h-2 rounded-full bg-white/40" />
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Low</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="inline-block w-3.5 h-3.5 rounded-full bg-white/40" />
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">High</span>
+          </div>
+        </div>
+      </div>
+
       {/* Tooltip on hover */}
       {hoveredNode && (
         <div
-          className="fixed z-50 pointer-events-none px-3 py-2 rounded-md shadow-lg border border-[hsl(var(--border))] bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))]"
+          className="fixed z-50 pointer-events-none px-3.5 py-2.5 rounded-lg shadow-xl border border-[hsl(var(--border))] bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))]"
           style={{
-            left: tooltipPos.x + 12,
-            top: tooltipPos.y - 10,
+            left: tooltipPos.x + 14,
+            top: tooltipPos.y - 12,
           }}
         >
-          <p className="text-xs font-semibold">{hoveredNode.name}</p>
-          {hoveredNode.funding && (
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-              Funding: {hoveredNode.funding}
-            </p>
-          )}
-          {hoveredNode.founding_year && (
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-              Founded: {hoveredNode.founding_year}
-            </p>
-          )}
-          {hoveredNode.sub_sector && (
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-              {hoveredNode.sub_sector}
-            </p>
-          )}
+          <p className="text-sm font-semibold mb-1">{hoveredNode.name}</p>
+          <div className="space-y-0.5">
+            {hoveredNode.sub_sector && (
+              <p className="text-[11px] text-[hsl(217,91%,60%)]">{hoveredNode.sub_sector}</p>
+            )}
+            {hoveredNode.funding && (
+              <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                <span className="text-[hsl(var(--foreground))] font-medium">{hoveredNode.funding}</span> raised
+              </p>
+            )}
+            {hoveredNode.funding_stage && (
+              <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                Stage: {hoveredNode.funding_stage}
+              </p>
+            )}
+            {hoveredNode.founding_year && (
+              <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                Founded {hoveredNode.founding_year}
+              </p>
+            )}
+            {hoveredNode.headquarters && (
+              <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+                {hoveredNode.headquarters}
+              </p>
+            )}
+          </div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))] mt-1.5 pt-1 border-t border-[hsl(var(--border))]/50">
+            Click for details
+          </p>
         </div>
       )}
     </div>
