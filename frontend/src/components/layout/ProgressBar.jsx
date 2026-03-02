@@ -5,7 +5,7 @@ import { cn } from "../../lib/utils";
  * Width animates based on currentStep (0-5), with indeterminate shimmer while active.
  */
 export default function ProgressBar({ currentStep = 0, isActive = false }) {
-  const percent = Math.min((currentStep / 5) * 100, 100);
+  const percent = Math.min((currentStep / 6) * 100, 100);
 
   if (!isActive && currentStep === 0) return null;
 
@@ -14,7 +14,7 @@ export default function ProgressBar({ currentStep = 0, isActive = false }) {
       className={cn(
         "fixed top-0 left-0 right-0 z-50 h-[3px] bg-transparent",
         "transition-opacity duration-300",
-        !isActive && currentStep >= 5 ? "opacity-0" : "opacity-100"
+        !isActive && currentStep >= 6 ? "opacity-0" : "opacity-100"
       )}
     >
       <div

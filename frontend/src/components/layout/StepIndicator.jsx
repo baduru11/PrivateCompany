@@ -1,7 +1,7 @@
 import { CheckCircle2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 
-const DEFAULT_STEPS = ["Planner", "Searcher", "Profiler", "Synthesis", "Critic"];
+const DEFAULT_STEPS = ["Validating", "Planner", "Searcher", "Profiler", "Synthesis", "Critic"];
 
 /**
  * Horizontal row of pipeline steps. Active step is highlighted,

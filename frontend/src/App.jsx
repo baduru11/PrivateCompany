@@ -16,16 +16,18 @@ import { PDFExport } from "./components/shared/PDFExport";
 
 // Hooks
 import { useAgentQuery } from "./hooks/useAgentQuery";
+import { fetchReport } from "./lib/api";
 
 /**
  * Map SSE event node names to step numbers for StepIndicator.
  */
 const NODE_TO_STEP = {
-  planner: 1,
-  searcher: 2,
-  profiler: 3,
-  synthesis: 4,
-  critic: 5,
+  validation: 1,
+  planner: 2,
+  searcher: 3,
+  profiler: 4,
+  synthesis: 5,
+  critic: 6,
 };
 
 /**
@@ -107,11 +109,19 @@ function App() {
   /**
    * Handle selecting a report from history.
    */
-  const handleSelectReport = useCallback((report) => {
-    setQueryResult(report);
+  const handleSelectReport = useCallback(async (report) => {
     const mode = report.mode || "explore";
-    setCurrentView(mode === "deep_dive" ? "deep_dive" : "explore");
-  }, []);
+    try {
+      const fullReport = await fetchReport(report.filename);
+      setQueryResult(fullReport);
+      setCurrentView(mode === "deep_dive" ? "deep_dive" : "explore");
+    } catch {
+      // Fallback: re-run the query (backend will return cached result)
+      setCurrentView(mode === "deep_dive" ? "deep_dive" : "explore");
+      setQueryResult(null);
+      submit(report.query, mode);
+    }
+  }, [submit]);
 
   /**
    * Handle "Deep Dive" from Explore sidebar.
@@ -149,7 +159,7 @@ function App() {
     : new Date().toLocaleDateString();
 
   return (
-    <div className="min-h-screen bg-[hsl(var(--background))] flex flex-col">
+    <div className="h-screen bg-[hsl(var(--background))] flex flex-col overflow-hidden">
       {/* Fixed progress bar at very top */}
       <ProgressBar currentStep={currentStep} isActive={isLoading} />
 
@@ -173,7 +183,7 @@ function App() {
       )}
 
       {/* Main content area */}
-      <main className="flex-1 overflow-hidden pb-10">
+      <main className="flex-1 overflow-hidden">
         {currentView === "history" && (
           <HistoryGrid onSelectReport={handleSelectReport} />
         )}
@@ -201,19 +211,10 @@ function App() {
                 </p>
               </div>
             ) : queryResult ? (
-              <div className="h-full flex flex-col">
-                {/* PDF export bar */}
-                <div className="flex justify-end px-4 py-2 border-b border-[hsl(var(--border))]">
-                  <PDFExport
-                    targetRef={reportRef}
-                    companyName={companyName}
-                    reportDate={reportDate}
-                  />
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <DeepDiveView data={queryResult} />
-                </div>
-              </div>
+              <DeepDiveView
+                data={queryResult}
+                onDownloadPdf={handleDownloadPdf}
+              />
             ) : null}
           </div>
         )}
@@ -222,6 +223,7 @@ function App() {
       {/* Agent log — fixed bottom, collapsible */}
       <AgentLog
         events={events}
+        isActive={isLoading}
         isOpen={agentLogOpen}
         onToggle={() => setAgentLogOpen((prev) => !prev)}
       />

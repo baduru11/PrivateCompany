@@ -5,6 +5,39 @@ import { Button } from "../ui/button";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { cn } from "../../lib/utils";
 
+const CONSONANTS = new Set("bcdfghjklmnpqrstvwxyz");
+
+/**
+ * Tier 1 — instant, client-side rule-based query validation.
+ * Returns an error string or null if valid.
+ */
+function validateQuery(query) {
+  const q = query.trim();
+
+  if (q.length < 3) return "Query is too short (minimum 3 characters).";
+  if (q.length > 200) return "Query is too long (maximum 200 characters).";
+  if (!/[a-zA-Z0-9]/.test(q)) return "Query must contain letters or numbers.";
+  if (/(.)\1{3,}/.test(q)) return "Query contains too many repeated characters.";
+
+  // Keyboard mash: 5+ consecutive consonants
+  let consec = 0;
+  for (const ch of q.toLowerCase()) {
+    if (CONSONANTS.has(ch)) {
+      consec += 1;
+      if (consec >= 5) return "Query looks like random keyboard input.";
+    } else {
+      consec = 0;
+    }
+  }
+
+  // At least 40% alphabetic
+  const alphaCount = [...q].filter((ch) => /[a-zA-Z]/.test(ch)).length;
+  if (q.length > 0 && alphaCount / q.length < 0.4)
+    return "Query must be mostly text, not numbers or symbols.";
+
+  return null;
+}
+
 /**
  * Compact top bar: logo on left, search input in center,
  * mode toggle (Explore / Deep Dive), and submit button.
@@ -13,12 +46,26 @@ import { cn } from "../../lib/utils";
 export default function TopBar({ onSubmit, isLoading = false, onLogoClick }) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState("explore");
+  const [validationError, setValidationError] = useState(null);
+
+  const handleChange = useCallback((e) => {
+    setQuery(e.target.value);
+    setValidationError(null);
+  }, []);
 
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
       const trimmed = query.trim();
       if (!trimmed || isLoading) return;
+
+      const error = validateQuery(trimmed);
+      if (error) {
+        setValidationError(error);
+        return;
+      }
+
+      setValidationError(null);
       onSubmit?.(trimmed, mode);
     },
     [query, mode, isLoading, onSubmit]
@@ -49,14 +96,21 @@ export default function TopBar({ onSubmit, isLoading = false, onLogoClick }) {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
           <Input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={handleChange}
             placeholder="e.g. AI infrastructure startups in Series A-B..."
             className={cn(
               "pl-8 h-9 text-sm bg-[hsl(var(--background))]",
-              "border-[hsl(var(--border))] focus-visible:ring-[hsl(217,91%,60%)]/40"
+              validationError
+                ? "border-red-500 focus-visible:ring-red-500/40"
+                : "border-[hsl(var(--border))] focus-visible:ring-[hsl(217,91%,60%)]/40"
             )}
             disabled={isLoading}
           />
+          {validationError && (
+            <p className="absolute left-0 top-full mt-1 text-xs text-red-500">
+              {validationError}
+            </p>
+          )}
         </div>
 
         {/* Mode toggle */}
