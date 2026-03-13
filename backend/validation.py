@@ -92,7 +92,7 @@ def validate_query_rules(query: str) -> QueryValidation:
 
 
 # ---------------------------------------------------------------------------
-# Tier 3 — LLM semantic validation (1 API call, fail-open)
+# Tier 3 — LLM semantic validation (1 API call, fail-closed)
 # ---------------------------------------------------------------------------
 _SEMANTIC_PROMPT = """\
 You are a query validator for a business intelligence tool.
@@ -113,7 +113,7 @@ User query: {query}"""
 
 
 async def validate_query_semantic(query: str) -> QueryValidation:
-    """Use a single LLM call to check business relevance. Fail-open on errors."""
+    """Use a single LLM call to check business relevance. Fail-closed on errors."""
     try:
         from backend.config import get_llm
 
@@ -130,6 +130,9 @@ async def validate_query_semantic(query: str) -> QueryValidation:
         return QueryValidation(is_valid=False, reason=reason, suggestion=suggestion)
 
     except Exception:
-        # Fail-open: never block a potentially legitimate query
-        logger.exception("Semantic validation failed — allowing query through")
-        return QueryValidation(is_valid=True)
+        logger.exception("Semantic validation failed — rejecting query")
+        return QueryValidation(
+            is_valid=False,
+            reason="Validation service temporarily unavailable. Please retry in a moment.",
+            suggestion="If this persists, check that the backend has a valid OPENROUTER_API_KEY.",
+        )
