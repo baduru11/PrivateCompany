@@ -25,7 +25,6 @@ from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from backend.cache import CacheManager
 from backend.config import get_settings
 from backend.graph import build_deep_dive_graph, build_explore_graph
-from backend.streaming import format_sse
 from backend.validation import QueryValidation, validate_query_rules, validate_query_semantic
 
 logger = logging.getLogger(__name__)
@@ -33,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Startup check — log whether API keys are loaded
 _s = get_settings()
-logger.info("GEMINI_API_KEY loaded: %s", bool(_s.gemini_api_key))
+logger.info("OPENROUTER_API_KEY loaded: %s", bool(_s.openrouter_api_key))
 logger.info("TAVILY_API_KEY loaded: %s", bool(_s.tavily_api_key))
 logger.info("EXA_API_KEY loaded: %s", bool(_s.exa_api_key))
 
