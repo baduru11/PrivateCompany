@@ -159,8 +159,8 @@ def test_profiler_groups_signals_by_company_name():
     assert len(groups["beta inc"]) == 1
 
 
-def test_profiler_deep_dive_limits_urls_to_five():
-    """In deep_dive mode, at most 5 URLs are crawled per company."""
+def test_profiler_deep_dive_limits_urls_to_three():
+    """In deep_dive mode, at most 3 URLs are crawled per company."""
     from backend.nodes.profiler import profile
 
     signals = [
@@ -179,8 +179,8 @@ def test_profiler_deep_dive_limits_urls_to_five():
     ):
         result = profile({"mode": "deep_dive", "raw_signals": signals})
 
-    # Should crawl at most 5 URLs even though 8 signals exist
-    assert mock_crawl.call_count <= 5
+    # Should crawl at most 3 URLs even though 8 signals exist
+    assert mock_crawl.call_count <= 3
 
 
 class TestProfilerErrorHandling:

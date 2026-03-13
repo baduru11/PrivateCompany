@@ -14,7 +14,7 @@ def test_planner_explore_returns_search_plan():
             sub_sectors=["GPU", "ASIC", "FPGA"]
         ))
     )
-    state = {"query": "AI inference chips", "mode": "explore", "retry_count": 0}
+    state = {"query": "AI inference chips", "mode": "explore"}
     with patch("backend.nodes.planner.get_llm", return_value=mock_llm):
         result = plan_search(state)
     assert "search_plan" in result
@@ -31,34 +31,34 @@ def test_planner_deep_dive_returns_search_plan():
             sub_sectors=[]
         ))
     )
-    state = {"query": "NVIDIA", "mode": "deep_dive", "retry_count": 0}
+    state = {"query": "NVIDIA", "mode": "deep_dive"}
     with patch("backend.nodes.planner.get_llm", return_value=mock_llm):
         result = plan_search(state)
     assert result["search_plan"].target_company_count == 1
 
 
-def test_planner_includes_retry_context():
-    """When retry_count > 0 and critic_report has gaps, planner should include gap info."""
+def test_planner_does_not_include_retry_context():
+    """Planner should not include any retry context (pipeline is linear)."""
     from backend.nodes.planner import plan_search
-    from backend.models import CriticReport
 
     mock_llm = MagicMock()
-    mock_llm.with_structured_output.return_value = MagicMock(
-        invoke=MagicMock(return_value=SearchPlan(
-            search_terms=["NVIDIA headcount", "NVIDIA employees"],
-            target_company_count=1,
-            sub_sectors=[]
-        ))
+    mock_structured = MagicMock()
+    mock_structured.invoke.return_value = SearchPlan(
+        search_terms=["NVIDIA headcount", "NVIDIA employees"],
+        target_company_count=1,
+        sub_sectors=[]
     )
-    critic = CriticReport(
-        overall_confidence=0.4,
-        gaps=["headcount data missing", "key people not found"],
-        should_retry=True,
-    )
-    state = {"query": "NVIDIA", "mode": "deep_dive", "retry_count": 1, "critic_report": critic}
+    mock_llm.with_structured_output.return_value = mock_structured
+    state = {"query": "NVIDIA", "mode": "deep_dive"}
     with patch("backend.nodes.planner.get_llm", return_value=mock_llm):
         result = plan_search(state)
     assert "search_plan" in result
+    # Verify the prompt does not contain retry context
+    call_args = mock_structured.invoke.call_args[0][0]
+    user_msg = call_args[1].content
+    assert "retry" not in user_msg.lower()
+    assert "gap" not in user_msg.lower()
+    assert user_msg == "Query: NVIDIA"
 
 
 class TestPlannerErrorHandling:

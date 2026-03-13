@@ -136,7 +136,6 @@ class TestCriticHappyPath:
                 "report": report,
                 "raw_signals": raw_signals,
                 "company_profiles": [],
-                "retry_count": 0,
             })
 
         assert "critic_report" in result
@@ -144,8 +143,9 @@ class TestCriticHappyPath:
         assert result["critic_report"].overall_confidence == 0.75
         assert result["critic_report"].section_scores["overview"] == 0.9
         assert result["critic_report"].should_retry is False
-        # retry_count should not increment when should_retry=False
-        assert result["retry_count"] == 0
+        # No retry keys in result (pipeline is linear)
+        assert "retry_count" not in result
+        assert "retry_targets" not in result
         # Verify LLM was called with CriticReport schema
         mock_llm.with_structured_output.assert_called_once_with(CriticReport)
         mock_structured.invoke.assert_called_once()
@@ -176,16 +176,14 @@ class TestCriticHappyPath:
                 "report": report,
                 "raw_signals": raw_signals,
                 "company_profiles": [],
-                "retry_count": 0,
             })
 
         call_args = mock_structured.invoke.call_args[0][0]
         user_msg = call_args[1].content
         # Report content should be in the prompt
         assert "Acme Corp" in user_msg
-        # Raw source snippets should be in the prompt
+        # Raw source URLs should be in the prompt (snippets are no longer sent)
         assert "https://acme.com" in user_msg
-        assert "Series A" in user_msg
 
     def test_critic_uses_system_prompt(self):
         """The system message sent to the LLM is CRITIC_SYSTEM."""
@@ -208,7 +206,6 @@ class TestCriticHappyPath:
             critique({
                 "report": report,
                 "raw_signals": [],
-                "retry_count": 0,
             })
 
         call_args = mock_structured.invoke.call_args[0][0]
@@ -216,11 +213,11 @@ class TestCriticHappyPath:
         assert system_msg == CRITIC_SYSTEM
 
 
-class TestCriticRetryLogic:
-    """Tests for the retry decision logic."""
+class TestCriticNoRetry:
+    """Tests that the critic never requests a retry (pipeline is linear)."""
 
-    def test_critic_requests_retry_on_major_gaps(self):
-        """When LLM returns should_retry=True and retry_count=0, should_retry stays True."""
+    def test_critic_forces_should_retry_false_even_when_llm_says_true(self):
+        """should_retry is always forced to False regardless of LLM output."""
         from backend.nodes.critic import critique
 
         report = _make_deep_dive_report()
@@ -268,85 +265,15 @@ class TestCriticRetryLogic:
                 "report": report,
                 "raw_signals": raw_signals,
                 "company_profiles": [],
-                "retry_count": 0,
             })
 
-        assert result["critic_report"].should_retry is True
+        # should_retry is always forced to False (linear pipeline)
+        assert result["critic_report"].should_retry is False
+        # Gaps and queries are preserved for informational purposes
         assert len(result["critic_report"].gaps) == 4
-        assert len(result["critic_report"].retry_queries) == 2
-        # retry_count should increment by 1
-        assert result["retry_count"] == 1
-
-    def test_critic_does_not_retry_on_second_pass(self):
-        """When retry_count >= 1, should_retry is forced to False regardless of LLM output."""
-        from backend.nodes.critic import critique
-
-        report = _make_deep_dive_report()
-        raw_signals = _make_raw_signals()
-
-        # LLM still wants to retry, but we've already retried once
-        gap_critic = CriticReport(
-            overall_confidence=0.3,
-            section_scores={
-                "overview": 0.3,
-                "funding": 0.2,
-                "key_people": 0.1,
-                "product_technology": 0.2,
-                "recent_news": 0.1,
-                "competitors": 0.1,
-                "red_flags": 0.0,
-            },
-            gaps=["Still missing key data"],
-            should_retry=True,  # LLM still wants retry
-            retry_queries=["Acme Corp latest funding"],
-        )
-
-        mock_llm = MagicMock()
-        mock_structured = MagicMock()
-        mock_structured.invoke.return_value = gap_critic
-        mock_llm.with_structured_output.return_value = mock_structured
-
-        with patch("backend.nodes.critic.get_llm", return_value=mock_llm):
-            result = critique({
-                "report": report,
-                "raw_signals": raw_signals,
-                "company_profiles": [],
-                "retry_count": 1,  # Already retried once
-            })
-
-        # should_retry must be forced to False
-        assert result["critic_report"].should_retry is False
-        # retry_count stays at 1 since no retry is happening
-        assert result["retry_count"] == 1
-
-    def test_critic_does_not_retry_on_high_retry_count(self):
-        """When retry_count is well above the limit, should_retry is forced to False."""
-        from backend.nodes.critic import critique
-
-        report = _make_deep_dive_report()
-
-        gap_critic = CriticReport(
-            overall_confidence=0.2,
-            section_scores={},
-            gaps=["Everything is bad"],
-            should_retry=True,
-            retry_queries=["more data please"],
-        )
-
-        mock_llm = MagicMock()
-        mock_structured = MagicMock()
-        mock_structured.invoke.return_value = gap_critic
-        mock_llm.with_structured_output.return_value = mock_structured
-
-        with patch("backend.nodes.critic.get_llm", return_value=mock_llm):
-            result = critique({
-                "report": report,
-                "raw_signals": [],
-                "retry_count": 5,
-            })
-
-        assert result["critic_report"].should_retry is False
-        assert result["retry_count"] == 5
+        # No retry_count or retry_targets in result
+        assert "retry_count" not in result
+        assert "retry_targets" not in result
 
 
 class TestCriticEdgeCases:
@@ -362,7 +289,7 @@ class TestCriticEdgeCases:
             overall_confidence=0.3,
             section_scores={},
             gaps=["No raw sources to verify against"],
-            should_retry=True,
+            should_retry=False,
             retry_queries=["Acme Corp"],
         )
 
@@ -374,7 +301,6 @@ class TestCriticEdgeCases:
         with patch("backend.nodes.critic.get_llm", return_value=mock_llm):
             result = critique({
                 "report": report,
-                "retry_count": 0,
             })
 
         # Should still produce a valid critic report
@@ -404,7 +330,6 @@ class TestCriticEdgeCases:
             result = critique({
                 "report": "This is a plain text report about Acme Corp.",
                 "raw_signals": [],
-                "retry_count": 0,
             })
 
         assert "critic_report" in result
@@ -412,8 +337,8 @@ class TestCriticEdgeCases:
         user_msg = call_args[1].content
         assert "This is a plain text report about Acme Corp." in user_msg
 
-    def test_critic_default_retry_count_is_zero(self):
-        """When retry_count is not in state, it defaults to 0."""
+    def test_critic_returns_only_critic_report_key(self):
+        """critique() should return only the critic_report key, no retry state."""
         from backend.nodes.critic import critique
 
         report = _make_deep_dive_report()
@@ -432,10 +357,9 @@ class TestCriticEdgeCases:
         with patch("backend.nodes.critic.get_llm", return_value=mock_llm):
             result = critique({
                 "report": report,
-                # No retry_count key at all
             })
 
-        assert result["retry_count"] == 0
+        assert set(result.keys()) == {"critic_report"}
 
 
 class TestCriticErrorHandling:
@@ -452,7 +376,7 @@ class TestCriticErrorHandling:
 
         with patch("backend.nodes.critic.get_llm", return_value=mock_llm):
             with pytest.raises(RuntimeError, match="Critic failed"):
-                critique({"report": report, "retry_count": 0})
+                critique({"report": report})
 
 
 class TestCriticTargetedRetry:

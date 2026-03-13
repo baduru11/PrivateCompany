@@ -18,8 +18,8 @@ def _make_tavily_result(title, url, content="snippet"):
     return {"title": title, "url": url, "content": content}
 
 
-def test_searcher_explore_uses_exa_and_tavily():
-    """In explore mode, Exa is called first. If < 5 results, Tavily supplements."""
+def test_searcher_explore_uses_all_three_providers():
+    """In explore mode, all 3 providers run in parallel."""
     from backend.nodes.searcher import search
 
     plan = SearchPlan(
@@ -28,41 +28,55 @@ def test_searcher_explore_uses_exa_and_tavily():
         sub_sectors=["GPU"],
     )
 
-    # Exa returns only 2 results (below threshold of 5), so Tavily will also be called
     mock_exa = MagicMock()
     mock_exa.search.return_value = MagicMock(results=[
         _make_exa_result("CompanyA", "https://a.com"),
-        _make_exa_result("CompanyB", "https://b.com"),
     ])
 
     mock_tavily = MagicMock()
     mock_tavily.search.return_value = {
         "results": [
-            _make_tavily_result("CompanyC", "https://c.com"),
+            _make_tavily_result("CompanyB", "https://b.com"),
+        ]
+    }
+
+    mock_serper_response = MagicMock()
+    mock_serper_response.status_code = 200
+    mock_serper_response.raise_for_status = MagicMock()
+    mock_serper_response.json.return_value = {
+        "organic": [
+            {"title": "CompanyC", "link": "https://c.com", "snippet": "snippet"},
         ]
     }
 
     mock_cache = MagicMock()
-    mock_cache.get_api.return_value = None  # No cache hits
+    mock_cache.get_api.return_value = None
 
     with (
         patch("backend.nodes.searcher.get_exa_client", return_value=mock_exa),
         patch("backend.nodes.searcher.get_tavily_client", return_value=mock_tavily),
+        patch("backend.nodes.searcher.get_settings") as mock_settings,
         patch("backend.nodes.searcher.get_cache", return_value=mock_cache),
+        patch("httpx.post", return_value=mock_serper_response),
     ):
+        mock_settings.return_value = MagicMock(
+            exa_api_key="test-exa-key",
+            tavily_api_key="test-tavily-key",
+            serper_api_key="test-serper-key",
+            cache_dir="cache",
+        )
         result = search({"search_plan": plan, "mode": "explore"})
 
     assert "raw_signals" in result
     assert len(result["raw_signals"]) == 3
     sources = {s.source for s in result["raw_signals"]}
-    assert "exa" in sources
-    assert "tavily" in sources
+    assert sources == {"exa", "tavily", "serper"}
     mock_exa.search.assert_called_once()
     mock_tavily.search.assert_called_once()
 
 
-def test_searcher_deep_dive_uses_tavily():
-    """In deep_dive mode, only Tavily is used (no Exa)."""
+def test_searcher_deep_dive_uses_all_three_providers():
+    """In deep_dive mode, all 3 providers run in parallel."""
     from backend.nodes.searcher import search
 
     plan = SearchPlan(
@@ -71,6 +85,11 @@ def test_searcher_deep_dive_uses_tavily():
         sub_sectors=[],
     )
 
+    mock_exa = MagicMock()
+    mock_exa.search.return_value = MagicMock(results=[
+        _make_exa_result("NVIDIA Exa", "https://nvidia.com/exa"),
+    ])
+
     mock_tavily = MagicMock()
     mock_tavily.search.return_value = {
         "results": [
@@ -78,24 +97,41 @@ def test_searcher_deep_dive_uses_tavily():
         ]
     }
 
+    mock_serper_response = MagicMock()
+    mock_serper_response.status_code = 200
+    mock_serper_response.raise_for_status = MagicMock()
+    mock_serper_response.json.return_value = {
+        "organic": [
+            {"title": "NVIDIA Google", "link": "https://nvidia.com/google", "snippet": "from serper"},
+        ]
+    }
+
     mock_cache = MagicMock()
     mock_cache.get_api.return_value = None
 
     with (
-        patch("backend.nodes.searcher.get_exa_client") as mock_exa_factory,
+        patch("backend.nodes.searcher.get_exa_client", return_value=mock_exa),
         patch("backend.nodes.searcher.get_tavily_client", return_value=mock_tavily),
+        patch("backend.nodes.searcher.get_settings") as mock_settings,
         patch("backend.nodes.searcher.get_cache", return_value=mock_cache),
+        patch("httpx.post", return_value=mock_serper_response),
     ):
+        mock_settings.return_value = MagicMock(
+            exa_api_key="test-exa-key",
+            tavily_api_key="test-tavily-key",
+            serper_api_key="test-serper-key",
+            cache_dir="cache",
+        )
         result = search({"search_plan": plan, "mode": "deep_dive"})
 
     assert "raw_signals" in result
     # Tavily called once per search term
     assert mock_tavily.search.call_count == 2
-    # Exa client should never have been created
-    mock_exa_factory.assert_not_called()
-    # All signals should be from tavily
-    for signal in result["raw_signals"]:
-        assert signal.source == "tavily"
+    # Exa called once per search term
+    assert mock_exa.search.call_count == 2
+    # All 3 sources present
+    sources = {s.source for s in result["raw_signals"]}
+    assert sources == {"exa", "tavily", "serper"}
 
 
 def test_searcher_deduplicates_by_url():
@@ -110,18 +146,23 @@ def test_searcher_deduplicates_by_url():
 
     shared_url = "https://duplicate.com"
 
-    # Exa returns 1 result with shared_url (below 5, so Tavily also fires)
     mock_exa = MagicMock()
     mock_exa.search.return_value = MagicMock(results=[
         _make_exa_result("Duplicate Co", shared_url),
     ])
 
-    # Tavily also returns the same URL
+    # Tavily returns nothing for this test
     mock_tavily = MagicMock()
-    mock_tavily.search.return_value = {
-        "results": [
-            _make_tavily_result("Duplicate Co", shared_url),
-            _make_tavily_result("UniqueCompany", "https://unique.com"),
+    mock_tavily.search.return_value = {"results": []}
+
+    # Serper also returns the same URL plus a unique one
+    mock_serper_response = MagicMock()
+    mock_serper_response.status_code = 200
+    mock_serper_response.raise_for_status = MagicMock()
+    mock_serper_response.json.return_value = {
+        "organic": [
+            {"title": "Duplicate Co", "link": shared_url, "snippet": "dup"},
+            {"title": "UniqueCompany", "link": "https://unique.com", "snippet": "unique"},
         ]
     }
 
@@ -131,8 +172,16 @@ def test_searcher_deduplicates_by_url():
     with (
         patch("backend.nodes.searcher.get_exa_client", return_value=mock_exa),
         patch("backend.nodes.searcher.get_tavily_client", return_value=mock_tavily),
+        patch("backend.nodes.searcher.get_settings") as mock_settings,
         patch("backend.nodes.searcher.get_cache", return_value=mock_cache),
+        patch("httpx.post", return_value=mock_serper_response),
     ):
+        mock_settings.return_value = MagicMock(
+            exa_api_key="test-exa-key",
+            tavily_api_key="test-tavily-key",
+            serper_api_key="test-serper-key",
+            cache_dir="cache",
+        )
         result = search({"search_plan": plan, "mode": "explore"})
 
     urls = [s.url for s in result["raw_signals"]]
@@ -143,7 +192,7 @@ def test_searcher_deduplicates_by_url():
 
 
 def test_searcher_uses_cache():
-    """If cache has data, the API client is not called."""
+    """If cache has data, the actual API search methods are not called."""
     from backend.nodes.searcher import search
 
     plan = SearchPlan(
@@ -161,23 +210,34 @@ def test_searcher_uses_cache():
         ).model_dump()
     ]
 
+    mock_exa = MagicMock()
     mock_tavily = MagicMock()
     mock_cache = MagicMock()
-    # Cache returns data for tavily queries
+    # Cache returns data for all providers
     mock_cache.get_api.return_value = cached_data
 
     with (
-        patch("backend.nodes.searcher.get_exa_client") as mock_exa_factory,
+        patch("backend.nodes.searcher.get_exa_client", return_value=mock_exa),
         patch("backend.nodes.searcher.get_tavily_client", return_value=mock_tavily),
+        patch("backend.nodes.searcher.get_settings") as mock_settings,
         patch("backend.nodes.searcher.get_cache", return_value=mock_cache),
+        patch("httpx.post") as mock_httpx,
     ):
+        mock_settings.return_value = MagicMock(
+            exa_api_key="test-exa-key",
+            tavily_api_key="test-tavily-key",
+            serper_api_key="test-serper-key",
+            cache_dir="cache",
+        )
         result = search({"search_plan": plan, "mode": "deep_dive"})
 
+    # Cache was hit, so actual search APIs should NOT have been called
+    mock_exa.search.assert_not_called()
+    mock_tavily.search.assert_not_called()
+    mock_httpx.assert_not_called()
+    # Deduplicated: all 3 providers return same URL, so only 1 result
     assert len(result["raw_signals"]) == 1
     assert result["raw_signals"][0].company_name == "CachedCo"
-    # The actual API should NOT have been called since cache was hit
-    mock_tavily.search.assert_not_called()
-    mock_exa_factory.assert_not_called()
 
 
 class TestSearcherTimeoutHandling:
@@ -205,6 +265,20 @@ class TestSearcherTimeoutHandling:
         result = _search_tavily(mock_tavily, "AI chips", mock_cache)
         assert result == []
 
+    def test_serper_timeout_returns_empty(self):
+        from backend.nodes.searcher import _search_serper
+
+        mock_cache = MagicMock()
+        mock_cache.get_api.return_value = None
+
+        with (
+            patch("httpx.post", side_effect=TimeoutError("Serper timed out")),
+            patch("backend.nodes.searcher.get_settings") as mock_settings,
+        ):
+            mock_settings.return_value = MagicMock(serper_api_key="test-key")
+            result = _search_serper("AI chips", 10, mock_cache)
+        assert result == []
+
     def test_search_raises_when_all_providers_fail(self):
         from backend.nodes.searcher import search
 
@@ -219,7 +293,15 @@ class TestSearcherTimeoutHandling:
         with (
             patch("backend.nodes.searcher.get_exa_client", return_value=mock_exa),
             patch("backend.nodes.searcher.get_tavily_client", return_value=mock_tavily),
+            patch("backend.nodes.searcher.get_settings") as mock_settings,
             patch("backend.nodes.searcher.get_cache", return_value=mock_cache),
+            patch("httpx.post", side_effect=TimeoutError("down")),
         ):
+            mock_settings.return_value = MagicMock(
+                exa_api_key="test-exa-key",
+                tavily_api_key="test-tavily-key",
+                serper_api_key="test-serper-key",
+                cache_dir="cache",
+            )
             with pytest.raises(RuntimeError, match="no results found"):
                 search({"search_plan": plan, "mode": "explore"})

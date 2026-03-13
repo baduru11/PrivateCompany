@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 from backend.graph import (
     build_explore_graph,
     build_deep_dive_graph,
-    should_retry,
     AgentState,
     _build_graph,
 )
@@ -100,43 +99,14 @@ class TestGraphEdges:
         synthesis_targets = [e.target for e in edges if e.source == "synthesis"]
         assert "critic" in synthesis_targets
 
-    def test_critic_has_conditional_edges(self):
-        """Critic node should have edges to both planner (retry) and __end__."""
+    def test_critic_has_edge_to_end(self):
+        """Critic node should have a direct edge to __end__ (no retry loop)."""
         graph = build_explore_graph()
         graph_view = graph.get_graph()
         edges = graph_view.edges
         critic_targets = {e.target for e in edges if e.source == "critic"}
-        assert "planner" in critic_targets
         assert "__end__" in critic_targets
-
-
-# ---------------------------------------------------------------------------
-# should_retry conditional routing tests
-# ---------------------------------------------------------------------------
-
-class TestShouldRetry:
-    """Test the should_retry conditional edge function."""
-
-    def test_returns_end_when_no_critic_report(self):
-        state: AgentState = {}  # type: ignore[typeddict-item]
-        assert should_retry(state) == "end"
-
-    def test_returns_end_when_should_retry_false(self):
-        critic = CriticReport(
-            overall_confidence=0.8,
-            should_retry=False,
-        )
-        state: AgentState = {"critic_report": critic}  # type: ignore[typeddict-item]
-        assert should_retry(state) == "end"
-
-    def test_returns_planner_when_should_retry_true(self):
-        critic = CriticReport(
-            overall_confidence=0.2,
-            should_retry=True,
-            retry_queries=["more data"],
-        )
-        state: AgentState = {"critic_report": critic}  # type: ignore[typeddict-item]
-        assert should_retry(state) == "planner"
+        assert "planner" not in critic_targets
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +120,7 @@ class TestAgentState:
         expected_keys = {
             "query", "mode", "search_plan", "raw_signals",
             "company_profiles", "report", "critic_report",
-            "retry_count", "retry_targets", "status_events",
+            "status_events",
         }
         assert expected_keys == set(AgentState.__annotations__.keys())
 
@@ -196,26 +166,6 @@ class TestGraphStateAccumulation:
             assert raw_hint.__metadata__[0] is not operator.add, (
                 "raw_signals should replace, not accumulate"
             )
-
-
-class TestTargetedRetry:
-    def test_should_retry_uses_low_confidence_sections(self):
-        """should_retry returns 'planner' when low_confidence_sections is non-empty."""
-        from backend.graph import should_retry
-        mock_critic = MagicMock()
-        mock_critic.should_retry = True
-        mock_critic.low_confidence_sections = ["funding", "key_people"]
-        state = {"critic_report": mock_critic, "retry_count": 0}
-        assert should_retry(state) == "planner"
-
-    def test_should_retry_ends_when_no_low_confidence(self):
-        """should_retry returns 'end' when low_confidence_sections is empty."""
-        from backend.graph import should_retry
-        mock_critic = MagicMock()
-        mock_critic.should_retry = False
-        mock_critic.low_confidence_sections = []
-        state = {"critic_report": mock_critic, "retry_count": 0}
-        assert should_retry(state) == "end"
 
 
 class TestCheckpointing:
