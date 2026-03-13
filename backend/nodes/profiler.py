@@ -91,10 +91,18 @@ def profile(state: dict) -> dict:
         extra_content = ""
         if mode == "deep_dive":
             urls = list({s.url for s in company_signals})[:5]
-            for url in urls:
-                page = crawl_page(url)
-                if page:
-                    extra_content += f"\n\n--- Full page: {url} ---\n{page[:5000]}"
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                future_to_url = {pool.submit(crawl_page, url): url for url in urls}
+                for future in as_completed(future_to_url):
+                    url = future_to_url[future]
+                    try:
+                        page = future.result()
+                        if page:
+                            extra_content += f"\n\n--- Full page: {url} ---\n{page[:5000]}"
+                    except Exception as exc:
+                        logger.warning("Crawl failed for %s: %s", url, exc)
 
         combined = f"{snippets}{extra_content}"
 
