@@ -223,6 +223,12 @@ async def query(req: QueryRequest):
             async for chunk in graph.astream(
                 {"query": req.query, "mode": req.mode},
                 stream_mode="updates",
+                config={
+                    "metadata": {
+                        "mode": req.mode,
+                        "query": req.query,
+                    }
+                },
             ):
                 for node_name, output in chunk.items():
                     if node_name == "__start__":
