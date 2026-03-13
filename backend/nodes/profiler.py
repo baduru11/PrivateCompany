@@ -1,6 +1,7 @@
 # backend/nodes/profiler.py
 from __future__ import annotations
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 from langchain_core.messages import SystemMessage, HumanMessage
 from backend.models import RawCompanySignal, CompanyProfile
@@ -92,7 +93,6 @@ def profile(state: dict) -> dict:
         if mode == "deep_dive":
             urls = list({s.url for s in company_signals})[:5]
 
-            from concurrent.futures import ThreadPoolExecutor, as_completed
             with ThreadPoolExecutor(max_workers=5) as pool:
                 future_to_url = {pool.submit(crawl_page, url): url for url in urls}
                 for future in as_completed(future_to_url):

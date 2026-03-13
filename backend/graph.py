@@ -3,7 +3,7 @@
 
 Both graphs share the same topology:
     Planner -> Searcher -> Profiler -> Synthesis -> Critic
-with a conditional edge from Critic back to Searcher when should_retry=True,
+with a conditional edge from Critic back to Planner when should_retry=True,
 capped at 1 retry by the Critic node itself.
 """
 from __future__ import annotations

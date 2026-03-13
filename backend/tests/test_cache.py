@@ -87,7 +87,9 @@ class TestCacheErrorHandling:
     def test_get_api_handles_corrupted_json(self, tmp_path):
         """get_api should return None for corrupted JSON files."""
         cm = CacheManager(base_dir=str(tmp_path))
-        path = cm.api_dir / "exa_deadbeef.json"
-        path.write_text("not valid json", encoding="utf-8")
-        result = cm.get_api("exa", "anything")
+        # Write corrupted JSON to the exact path get_api will look up
+        query = "test corrupted"
+        expected_path = cm.api_dir / f"exa_{cm._hash_key('exa', query)}.json"
+        expected_path.write_text("not valid json{{{", encoding="utf-8")
+        result = cm.get_api("exa", query)
         assert result is None

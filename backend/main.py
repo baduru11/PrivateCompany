@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -90,15 +91,18 @@ def get_fixture(mode: str, query: str) -> dict | None:
     return None
 
 
-from contextlib import asynccontextmanager
-
 @asynccontextmanager
 async def lifespan(app):
-    """Manage app-level resources like the SqliteSaver checkpointer."""
+    """Manage app-level resources like the SqliteSaver checkpointer.
+
+    Note: SqliteSaver uses synchronous __enter__/__exit__. This is acceptable
+    because SQLite open/close operations are fast (sub-millisecond).
+    """
+    s = get_settings()
     checkpointer = None
     try:
         from langgraph.checkpoint.sqlite import SqliteSaver
-        cp_path = Path(settings.cache_dir) / "checkpoints.db"
+        cp_path = Path(s.cache_dir) / "checkpoints.db"
         checkpointer = SqliteSaver.from_conn_string(str(cp_path))
         checkpointer.__enter__()
         logger.info("SqliteSaver checkpointer initialized at %s", cp_path)
