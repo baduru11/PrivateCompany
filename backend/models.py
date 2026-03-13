@@ -19,14 +19,16 @@ class RawCompanySignal(BaseModel):
     company_name: str
     url: str
     snippet: str
-    source: Literal["tavily", "exa"]
+    source: Literal["tavily", "exa", "serper"]
     metadata: dict = {}
 
 
 class CompanyProfile(BaseModel):
-    name: str
+    name: str = ""
     description: Optional[str] = None
     website: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    crunchbase_url: Optional[str] = None
     funding_total: Optional[str] = None
     funding_source_url: Optional[str] = None
     funding_confidence: float = Field(ge=0.0, le=1.0, default=0.0)
@@ -34,6 +36,7 @@ class CompanyProfile(BaseModel):
     funding_stage_source_url: Optional[str] = None
     key_investors: list[str] = []
     founding_year: Optional[int] = None
+    founding_month: Optional[str] = None  # e.g. "March", "2023-03"
     founding_year_source_url: Optional[str] = None
     headcount_estimate: Optional[str] = None
     headquarters: Optional[str] = None
@@ -43,6 +46,15 @@ class CompanyProfile(BaseModel):
     recent_news: list[dict] = []
     sub_sector: Optional[str] = None
     raw_sources: list[str] = []
+    # Due diligence enrichment
+    market_tam: Optional[str] = None
+    market_tam_source_url: Optional[str] = None
+    business_model: Optional[str] = None
+    revenue_indicators: Optional[str] = None
+    customer_signals: Optional[str] = None
+    competitive_advantages: Optional[str] = None
+    regulatory_environment: Optional[str] = None
+    competitors_mentioned: list[dict] = []
 
     @model_validator(mode="after")
     def funding_must_have_source(self):
@@ -89,6 +101,14 @@ class DeepDiveSection(BaseModel):
     source_count: int = 0
 
 
+class SectionProse(BaseModel):
+    """Output schema for a single section's parallel LLM call."""
+    content: str
+    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    source_urls: list[str] = []
+    source_count: int = 0
+
+
 class FundingRound(BaseModel):
     date: Optional[str] = None
     stage: Optional[str] = None
@@ -109,7 +129,11 @@ class CompetitorEntry(BaseModel):
     name: str
     description: Optional[str] = None
     funding: Optional[str] = None
+    funding_stage: Optional[str] = None
     differentiator: Optional[str] = None
+    overlap: Optional[str] = None
+    website: Optional[str] = None
+    source_url: Optional[str] = None
 
 
 class PersonEntry(BaseModel):
@@ -117,6 +141,18 @@ class PersonEntry(BaseModel):
     title: Optional[str] = None
     background: Optional[str] = None
     source_url: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    prior_exits: list[str] = []
+    domain_expertise_years: Optional[int] = None
+    notable_affiliations: list[str] = []
+
+
+class RiskEntry(BaseModel):
+    category: Literal["regulatory", "market", "technology", "team", "financial", "competitive"] = "market"
+    content: str
+    severity: Literal["low", "medium", "high"] = "medium"
+    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    source_urls: list[str] = []
 
 
 class RedFlag(BaseModel):
@@ -133,6 +169,9 @@ class DeepDiveReport(BaseModel):
     headquarters: Optional[str] = None
     headcount: Optional[str] = None
     funding_stage: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    crunchbase_url: Optional[str] = None
+    logo_url: Optional[str] = None
     overview: DeepDiveSection
     funding: DeepDiveSection
     funding_rounds: list[FundingRound] = []
@@ -145,6 +184,13 @@ class DeepDiveReport(BaseModel):
     competitor_entries: list[CompetitorEntry] = []
     red_flags: DeepDiveSection
     red_flag_entries: list[RedFlag] = []
+    # Due diligence sections
+    market_opportunity: Optional[DeepDiveSection] = None
+    business_model: Optional[DeepDiveSection] = None
+    competitive_advantages: Optional[DeepDiveSection] = None
+    traction: Optional[DeepDiveSection] = None
+    risks: Optional[DeepDiveSection] = None
+    risk_entries: list[RiskEntry] = []
     citations: list[Citation] = []
 
 
