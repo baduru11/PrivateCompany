@@ -3,13 +3,10 @@ import { cn } from "../../lib/utils";
 const FUNDING_STAGES = ["Seed", "A", "B", "C+"];
 const YEAR_RANGES = ["2020+", "2015-19", "2010-14", "Pre-2010"];
 
-/**
- * A group of chips for a single filter category.
- */
 function ChipGroup({ label, items, category, activeFilters, onToggle }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wider shrink-0">
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))]/70 uppercase tracking-wider shrink-0">
         {label}
       </span>
       <div className="flex flex-wrap gap-1">
@@ -20,11 +17,11 @@ function ChipGroup({ label, items, category, activeFilters, onToggle }) {
               key={item}
               onClick={() => onToggle(category, item)}
               className={cn(
-                "px-2.5 py-1 rounded text-[11px] font-medium transition-all duration-200 cursor-pointer",
+                "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
                 "border",
                 isActive
-                  ? "bg-[hsl(217,91%,60%)]/15 text-[hsl(217,91%,60%)] border-[hsl(217,91%,60%)]/30"
-                  : "bg-transparent text-[hsl(var(--muted-foreground))] border-[hsl(var(--border))] hover:border-[hsl(var(--foreground))]/30 hover:text-[hsl(var(--foreground))]"
+                  ? "bg-[hsl(var(--primary))]/12 text-[hsl(var(--primary))] border-[hsl(var(--primary))]/25 shadow-sm shadow-blue-500/5"
+                  : "bg-transparent text-[hsl(var(--muted-foreground))] border-[hsl(var(--border))] hover:border-[hsl(var(--foreground))]/20 hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]/50"
               )}
             >
               {item}
@@ -36,11 +33,6 @@ function ChipGroup({ label, items, category, activeFilters, onToggle }) {
   );
 }
 
-/**
- * Row of toggle chips for filtering the force graph.
- * Categories: Sub-sectors, Funding stages, Year ranges.
- * Active filters are highlighted with accent color.
- */
 export default function FilterChips({
   subSectors = [],
   activeFilters = { subSectors: [], stages: [], years: [] },
@@ -56,7 +48,7 @@ export default function FilterChips({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-4 px-4 py-2 bg-[hsl(var(--card))] border-b border-[hsl(var(--border))]">
+    <div className="flex flex-wrap items-center gap-4 px-5 py-2.5 bg-[hsl(var(--card))]/50 border-b border-[hsl(var(--border))]">
       {subSectors.length > 0 && (
         <ChipGroup
           label="Sector"

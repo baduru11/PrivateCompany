@@ -4,31 +4,23 @@ import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 
-/**
- * Confidence badge with color coding.
- */
 function ConfidenceBadge({ confidence }) {
   if (confidence == null) return null;
   const pct = typeof confidence === "number" ? confidence : 0;
-  let color = "bg-[hsl(0,84%,60%)]/20 text-[hsl(0,84%,60%)]";
+  let color = "bg-red-500/12 text-red-400 border-red-500/25";
   if (pct >= 0.8) {
-    color = "bg-[hsl(142,71%,45%)]/20 text-[hsl(142,71%,45%)]";
+    color = "bg-emerald-500/12 text-emerald-400 border-emerald-500/25";
   } else if (pct >= 0.5) {
-    color = "bg-[hsl(45,93%,47%)]/20 text-[hsl(45,93%,47%)]";
+    color = "bg-amber-500/12 text-amber-400 border-amber-500/25";
   }
 
   return (
-    <Badge variant="outline" className={cn("text-[10px] font-mono", color)}>
+    <Badge variant="outline" className={cn("text-[10px] font-mono tabular-nums", color)}>
       {Math.round(pct * 100)}% confidence
     </Badge>
   );
 }
 
-/**
- * Slide-in panel from the right showing selected company details.
- * Animates in/out. Contains company name, description, key data points,
- * confidence badge, and a "Deep Dive" button.
- */
 export default function CompanySidebar({
   company,
   isOpen = false,
@@ -40,10 +32,12 @@ export default function CompanySidebar({
   const detail = (Icon, label, value) => {
     if (!value) return null;
     return (
-      <div className="flex items-start gap-2.5 py-2 border-b border-[hsl(var(--border))]/50 last:border-0">
-        <Icon className="w-3.5 h-3.5 mt-0.5 text-[hsl(var(--muted-foreground))] shrink-0" />
+      <div className="flex items-start gap-2.5 py-2.5 border-b border-[hsl(var(--border))]/30 last:border-0">
+        <div className="p-1.5 rounded-md bg-[hsl(var(--muted))]">
+          <Icon className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />
+        </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-0.5">
+          <p className="text-[10px] uppercase tracking-wider text-[hsl(var(--muted-foreground))]/70 mb-0.5">
             {label}
           </p>
           <p className="text-sm text-[hsl(var(--foreground))]">{value}</p>
@@ -56,20 +50,21 @@ export default function CompanySidebar({
     <div
       className={cn(
         "fixed top-0 right-0 h-full w-80 z-30",
-        "bg-[hsl(var(--card))] border-l border-[hsl(var(--border))]",
-        "shadow-2xl shadow-black/20",
+        "glass-strong border-l border-[hsl(var(--border))]",
+        "shadow-2xl shadow-black/30",
         "transition-transform duration-300 ease-in-out",
         isOpen ? "translate-x-0" : "translate-x-full"
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+      <div className="flex items-center justify-between px-4 py-3.5 border-b border-[hsl(var(--border))]">
         <h2 className="text-sm font-semibold text-[hsl(var(--foreground))] truncate">
           {company?.name || "Company Details"}
         </h2>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-[hsl(var(--muted))] transition-colors cursor-pointer"
+          aria-label="Close sidebar"
+          className="p-1.5 rounded-lg hover:bg-[hsl(var(--muted))] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
         >
           <X className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
         </button>
@@ -77,57 +72,38 @@ export default function CompanySidebar({
 
       {/* Content */}
       {company && (
-        <ScrollArea className="h-[calc(100%-3.25rem)]">
-          <div className="p-4 space-y-4">
+        <ScrollArea className="h-[calc(100%-3.5rem)]">
+          <div className="p-4 space-y-4 animate-fade-in">
             {/* Name and confidence */}
             <div>
               <h3 className="text-lg font-semibold text-[hsl(var(--foreground))] leading-tight">
                 {company.name}
               </h3>
-              {company.sub_sector && (
-                <Badge
-                  variant="outline"
-                  className="mt-2 text-[10px] text-[hsl(var(--muted-foreground))]"
-                >
-                  {company.sub_sector}
-                </Badge>
-              )}
-              {company.confidence != null && (
-                <div className="mt-2">
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {company.sub_sector && (
+                  <Badge variant="outline" className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                    {company.sub_sector}
+                  </Badge>
+                )}
+                {company.confidence != null && (
                   <ConfidenceBadge confidence={company.confidence} />
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Description */}
             {company.description && (
-              <p className="text-sm text-[hsl(var(--foreground))]/70 leading-relaxed">
+              <p className="text-sm text-[hsl(var(--muted-foreground))] leading-relaxed">
                 {company.description}
               </p>
             )}
 
             {/* Details list */}
-            <div className="space-y-0">
-              {detail(
-                DollarSign,
-                "Funding",
-                company.funding || company.funding_amount
-              )}
-              {detail(
-                Building2,
-                "Stage",
-                company.funding_stage || company.stage
-              )}
-              {detail(
-                Calendar,
-                "Founded",
-                company.founding_year || company.founded
-              )}
-              {detail(
-                MapPin,
-                "Headquarters",
-                company.headquarters || company.hq
-              )}
+            <div className="space-y-0 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/50 p-3">
+              {detail(DollarSign, "Funding", company.funding || company.funding_amount)}
+              {detail(Building2, "Stage", company.funding_stage || company.stage)}
+              {detail(Calendar, "Founded", company.founding_year || company.founded)}
+              {detail(MapPin, "Headquarters", company.headquarters || company.hq)}
               {detail(
                 Users,
                 "Key Investors",
@@ -140,7 +116,12 @@ export default function CompanySidebar({
             {/* Deep Dive button */}
             <Button
               onClick={() => onDeepDive?.(company)}
-              className="w-full mt-4 bg-[hsl(217,91%,60%)] hover:bg-[hsl(217,91%,50%)] text-white"
+              className={cn(
+                "w-full mt-2 rounded-lg font-medium cursor-pointer",
+                "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700",
+                "text-white shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30",
+                "transition-all duration-200"
+              )}
             >
               Deep Dive
               <ArrowRight className="w-4 h-4 ml-2" />

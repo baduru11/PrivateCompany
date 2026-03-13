@@ -8,7 +8,6 @@ import {
   BarChart3,
   ChevronDown,
   ChevronUp,
-  ExternalLink,
   ArrowRight,
 } from "lucide-react";
 import ForceGraph from "./ForceGraph";
@@ -61,29 +60,26 @@ function confidenceColor(c) {
   return "text-red-400";
 }
 
-function confidenceBg(c) {
-  if (c == null) return "bg-zinc-500/10";
-  if (c >= 0.7) return "bg-emerald-500/10";
-  if (c >= 0.4) return "bg-amber-500/10";
-  return "bg-red-500/10";
-}
-
 /**
- * Stat card component for the metrics bar.
+ * Stat card with gradient icon background.
  */
-function StatCard({ icon: Icon, label, value, sub }) {
+function StatCard({ icon: Icon, label, value, color = "blue" }) {
+  const colorMap = {
+    blue: "from-blue-500/15 to-blue-600/5 text-blue-400",
+    green: "from-emerald-500/15 to-emerald-600/5 text-emerald-400",
+    purple: "from-purple-500/15 to-purple-600/5 text-purple-400",
+    amber: "from-amber-500/15 to-amber-600/5 text-amber-400",
+  };
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-[hsl(var(--card))] border border-[hsl(var(--border))]">
-      <div className="p-2 rounded-md bg-[hsl(217,91%,60%)]/10">
-        <Icon className="w-4 h-4 text-[hsl(217,91%,60%)]" />
+    <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border))] hover-glow transition-all">
+      <div className={cn("p-2.5 rounded-lg bg-gradient-to-br", colorMap[color])}>
+        <Icon className="w-4 h-4" />
       </div>
-      <div>
-        <p className="text-lg font-bold text-[hsl(var(--foreground))] leading-tight">{value}</p>
-        <p className="text-[11px] text-[hsl(var(--muted-foreground))]">{label}</p>
+      <div className="min-w-0">
+        <p className="text-lg font-bold text-[hsl(var(--foreground))] leading-tight tabular-nums">{value}</p>
+        <p className="text-[11px] text-[hsl(var(--muted-foreground))] truncate">{label}</p>
       </div>
-      {sub && (
-        <p className="text-[10px] text-[hsl(var(--muted-foreground))] ml-auto">{sub}</p>
-      )}
     </div>
   );
 }
@@ -94,42 +90,50 @@ function StatCard({ icon: Icon, label, value, sub }) {
 function CompanyRow({ company, index, onSelect, onDeepDive }) {
   return (
     <tr
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(company)}
-      className="group cursor-pointer border-b border-[hsl(var(--border))]/50 hover:bg-[hsl(var(--muted))]/50 transition-colors"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(company);
+        }
+      }}
+      className="group cursor-pointer border-b border-[hsl(var(--border))]/40 hover:bg-[hsl(var(--accent))]/50 transition-colors focus-visible:outline-none focus-visible:bg-[hsl(var(--accent))]/50"
     >
-      <td className="py-3 px-4 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono w-5">{index + 1}</span>
-          <span className="font-medium text-[hsl(var(--foreground))]">{company.name}</span>
+      <td className="py-3.5 px-4 text-sm">
+        <div className="flex items-center gap-2.5">
+          <span className="text-[10px] text-[hsl(var(--muted-foreground))]/50 font-mono w-5 tabular-nums">{index + 1}</span>
+          <span className="font-medium text-[hsl(var(--foreground))] group-hover:text-[hsl(var(--primary))] transition-colors">{company.name}</span>
         </div>
       </td>
-      <td className="py-3 px-3">
+      <td className="py-3.5 px-3">
         <Badge variant="outline" className="text-[10px] font-normal">
-          {company.sub_sector || "—"}
+          {company.sub_sector || "\u2014"}
         </Badge>
       </td>
-      <td className="py-3 px-3 text-sm font-mono text-[hsl(var(--foreground))]">
+      <td className="py-3.5 px-3 text-sm font-mono text-[hsl(var(--foreground))] tabular-nums">
         {company.funding || formatFunding(company.funding_numeric)}
       </td>
-      <td className="py-3 px-3 text-sm text-[hsl(var(--muted-foreground))]">
-        {company.funding_stage || "—"}
+      <td className="py-3.5 px-3 text-sm text-[hsl(var(--muted-foreground))]">
+        {company.funding_stage || "\u2014"}
       </td>
-      <td className="py-3 px-3 text-sm text-[hsl(var(--muted-foreground))]">
-        {company.founding_year || "—"}
+      <td className="py-3.5 px-3 text-sm text-[hsl(var(--muted-foreground))] tabular-nums">
+        {company.founding_year || "\u2014"}
       </td>
-      <td className="py-3 px-3 text-sm text-[hsl(var(--muted-foreground))]">
-        {company.headquarters || "—"}
+      <td className="py-3.5 px-3 text-sm text-[hsl(var(--muted-foreground))]">
+        {company.headquarters || "\u2014"}
       </td>
-      <td className="py-3 px-3">
-        <div className={cn("text-xs font-mono", confidenceColor(company.confidence))}>
-          {company.confidence != null ? `${Math.round(company.confidence * 100)}%` : "—"}
+      <td className="py-3.5 px-3">
+        <div className={cn("text-xs font-mono tabular-nums", confidenceColor(company.confidence))}>
+          {company.confidence != null ? `${Math.round(company.confidence * 100)}%` : "\u2014"}
         </div>
       </td>
-      <td className="py-3 px-3">
+      <td className="py-3.5 px-3">
         <Button
           size="sm"
           variant="ghost"
-          className="opacity-0 group-hover:opacity-100 transition-opacity h-7 text-xs"
+          className="opacity-0 group-hover:opacity-100 transition-opacity h-7 text-xs cursor-pointer"
           onClick={(e) => {
             e.stopPropagation();
             onDeepDive(company);
@@ -145,7 +149,7 @@ function CompanyRow({ company, index, onSelect, onDeepDive }) {
 export default function ExploreView({ data, onDeepDive }) {
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [viewMode, setViewMode] = useState("graph"); // "graph" | "table"
+  const [viewMode, setViewMode] = useState("graph");
   const [summaryExpanded, setSummaryExpanded] = useState(true);
   const [activeFilters, setActiveFilters] = useState({
     subSectors: [],
@@ -199,7 +203,6 @@ export default function ExploreView({ data, onDeepDive }) {
     });
   }, [filteredCompanies, tableSortKey, tableSortDir]);
 
-  // Aggregate stats
   const stats = useMemo(() => {
     const totalFunding = filteredCompanies.reduce((sum, c) => sum + (c.funding_numeric || 0), 0);
     const avgConfidence = filteredCompanies.length > 0
@@ -243,7 +246,7 @@ export default function ExploreView({ data, onDeepDive }) {
   const SortHeader = ({ label, sortKey }) => (
     <th
       onClick={() => handleSort(sortKey)}
-      className="py-2.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] cursor-pointer hover:text-[hsl(var(--foreground))] transition-colors text-left select-none"
+      className="py-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] cursor-pointer hover:text-[hsl(var(--foreground))] transition-colors text-left select-none"
     >
       <span className="flex items-center gap-1">
         {label}
@@ -257,24 +260,24 @@ export default function ExploreView({ data, onDeepDive }) {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[hsl(var(--card))] border-b border-[hsl(var(--border))]">
+      <div className="flex items-center justify-between px-5 py-3 glass border-b border-[hsl(var(--border))]">
         <div className="flex items-center gap-3">
           <h2 className="text-base font-bold text-[hsl(var(--foreground))]">
             {sectorName}
           </h2>
-          <Badge variant="outline" className="text-[10px] font-mono">
+          <Badge variant="outline" className="text-[10px] font-mono tabular-nums">
             {filteredCompanies.length} compan{filteredCompanies.length === 1 ? "y" : "ies"}
             {filteredCompanies.length !== allCompanies.length && ` / ${allCompanies.length}`}
           </Badge>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 bg-[hsl(var(--muted))] p-1 rounded-lg">
           <button
             onClick={() => setViewMode("graph")}
             className={cn(
-              "p-2 rounded-md transition-colors",
+              "p-2 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
               viewMode === "graph"
-                ? "bg-[hsl(217,91%,60%)]/15 text-[hsl(217,91%,60%)]"
-                : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+                ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-sm"
+                : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
             )}
             title="Graph view"
           >
@@ -283,10 +286,10 @@ export default function ExploreView({ data, onDeepDive }) {
           <button
             onClick={() => setViewMode("table")}
             className={cn(
-              "p-2 rounded-md transition-colors",
+              "p-2 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
               viewMode === "table"
-                ? "bg-[hsl(217,91%,60%)]/15 text-[hsl(217,91%,60%)]"
-                : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+                ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-sm"
+                : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
             )}
             title="Table view"
           >
@@ -295,44 +298,26 @@ export default function ExploreView({ data, onDeepDive }) {
         </div>
       </div>
 
-      {/* Summary + stats panel */}
+      {/* Stats + summary panel */}
       <div className="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]/50">
-        {/* Stats row */}
-        <div className="grid grid-cols-4 gap-3 px-4 py-3">
-          <StatCard
-            icon={Building2}
-            label="Companies"
-            value={filteredCompanies.length}
-          />
-          <StatCard
-            icon={DollarSign}
-            label="Total Funding"
-            value={formatFunding(stats.totalFunding)}
-          />
-          <StatCard
-            icon={BarChart3}
-            label="Sub-Sectors"
-            value={Object.keys(stats.sectorCounts).length}
-          />
-          <StatCard
-            icon={TrendingUp}
-            label="Avg Confidence"
-            value={`${Math.round(stats.avgConfidence * 100)}%`}
-          />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-3.5">
+          <StatCard icon={Building2} label="Companies" value={filteredCompanies.length} color="blue" />
+          <StatCard icon={DollarSign} label="Total Funding" value={formatFunding(stats.totalFunding)} color="green" />
+          <StatCard icon={BarChart3} label="Sub-Sectors" value={Object.keys(stats.sectorCounts).length} color="purple" />
+          <StatCard icon={TrendingUp} label="Avg Confidence" value={`${Math.round(stats.avgConfidence * 100)}%`} color="amber" />
         </div>
 
-        {/* Summary text */}
         {summary && (
-          <div className="px-4 pb-3">
+          <div className="px-5 pb-3.5">
             <button
               onClick={() => setSummaryExpanded((v) => !v)}
-              className="flex items-center gap-1.5 text-[11px] font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors mb-1 cursor-pointer"
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors mb-1.5 cursor-pointer"
             >
               {summaryExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               AI Summary
             </button>
             {summaryExpanded && (
-              <p className="text-sm text-[hsl(var(--foreground))]/80 leading-relaxed pl-4 border-l-2 border-[hsl(217,91%,60%)]/30">
+              <p className="text-sm text-[hsl(var(--foreground))]/80 leading-relaxed pl-4 border-l-2 border-blue-500/30 animate-fade-in">
                 {summary}
               </p>
             )}
@@ -371,7 +356,7 @@ export default function ExploreView({ data, onDeepDive }) {
         ) : (
           <div className="flex-1 overflow-auto">
             <table className="w-full">
-              <thead className="sticky top-0 bg-[hsl(var(--card))] border-b border-[hsl(var(--border))] z-10">
+              <thead className="sticky top-0 glass-strong border-b border-[hsl(var(--border))] z-10">
                 <tr>
                   <SortHeader label="Company" sortKey="name" />
                   <SortHeader label="Sector" sortKey="sub_sector" />
@@ -380,7 +365,7 @@ export default function ExploreView({ data, onDeepDive }) {
                   <SortHeader label="Founded" sortKey="founding_year" />
                   <SortHeader label="HQ" sortKey="headquarters" />
                   <SortHeader label="Confidence" sortKey="confidence" />
-                  <th className="py-2.5 px-3 w-24"></th>
+                  <th className="py-3 px-3 w-24"></th>
                 </tr>
               </thead>
               <tbody>

@@ -14,8 +14,12 @@ function getSectorColor(subSector, sectorMap) {
   return sectorMap.get(subSector);
 }
 
-function fundingToRadius(funding, maxFunding) {
-  if (!funding || !maxFunding) return 8;
+function fundingToRadius(funding, maxFunding, fundingLabel) {
+  if (!maxFunding) return 8;
+  if ((!funding || funding === 0) && fundingLabel && /public|ipo/i.test(fundingLabel)) {
+    return 28;
+  }
+  if (!funding || funding === 0) return 10;
   const normalized = Math.min(funding / maxFunding, 1);
   return 6 + normalized * 28;
 }
@@ -65,7 +69,7 @@ export default function ForceGraph({
       headquarters: c.headquarters || c.hq,
       key_investors: c.key_investors,
       color: getSectorColor(c.sub_sector, sectorColorMap),
-      radius: fundingToRadius(c.funding_numeric, maxFunding),
+      radius: fundingToRadius(c.funding_numeric, maxFunding, c.funding || c.funding_total || c.funding_amount),
       initial: c.name ? c.name.charAt(0).toUpperCase() : "?",
     }));
 
@@ -87,7 +91,6 @@ export default function ForceGraph({
     return { nodes, links, sectorColorMap };
   }, [companies, maxFunding]);
 
-  // Extract legend from sector color map
   const sectorLegend = useMemo(() => {
     const entries = [];
     if (graphData.sectorColorMap) {
@@ -107,9 +110,9 @@ export default function ForceGraph({
       // Glow effect for hovered/selected nodes
       if (isSelected || isHovered) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, r + 6, 0, 2 * Math.PI);
-        const gradient = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 6);
-        gradient.addColorStop(0, `${node.color}44`);
+        ctx.arc(node.x, node.y, r + 8, 0, 2 * Math.PI);
+        const gradient = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 8);
+        gradient.addColorStop(0, `${node.color}55`);
         gradient.addColorStop(1, `${node.color}00`);
         ctx.fillStyle = gradient;
         ctx.fill();
@@ -140,7 +143,7 @@ export default function ForceGraph({
       ctx.fillText(node.initial, node.x, node.y);
 
       // Company name label below node
-      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.fillStyle = "rgba(255,255,255,0.65)";
       ctx.font = `${Math.max(Math.min(r * 0.5, 11), 8)}px -apple-system, system-ui, sans-serif`;
       ctx.fillText(node.name, node.x, node.y + r + 10);
     },
@@ -200,18 +203,18 @@ export default function ForceGraph({
 
       {/* Sector legend */}
       {sectorLegend.length > 0 && (
-        <div className="absolute top-3 left-3 px-3 py-2.5 rounded-lg bg-[hsl(var(--card))]/90 backdrop-blur-sm border border-[hsl(var(--border))] shadow-lg">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-2">
+        <div className="absolute top-3 left-3 px-3.5 py-3 rounded-xl glass border border-[hsl(var(--border))] shadow-xl">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]/70 mb-2.5">
             Sectors
           </p>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {sectorLegend.map(({ name, color }) => (
               <div key={name} className="flex items-center gap-2">
                 <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/10"
                   style={{ backgroundColor: color }}
                 />
-                <span className="text-[11px] text-[hsl(var(--foreground))]/80 truncate max-w-[140px]">
+                <span className="text-[11px] text-[hsl(var(--foreground))]/75 truncate max-w-[140px]">
                   {name}
                 </span>
               </div>
@@ -221,17 +224,17 @@ export default function ForceGraph({
       )}
 
       {/* Funding size legend */}
-      <div className="absolute bottom-3 left-3 px-3 py-2 rounded-lg bg-[hsl(var(--card))]/90 backdrop-blur-sm border border-[hsl(var(--border))] shadow-lg">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-1.5">
+      <div className="absolute bottom-3 left-3 px-3.5 py-2.5 rounded-xl glass border border-[hsl(var(--border))] shadow-xl">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]/70 mb-2">
           Node Size = Funding
         </p>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full bg-white/40" />
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-white/30" />
             <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Low</span>
           </div>
-          <div className="flex items-center gap-1">
-            <span className="inline-block w-3.5 h-3.5 rounded-full bg-white/40" />
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-3.5 h-3.5 rounded-full bg-white/30" />
             <span className="text-[10px] text-[hsl(var(--muted-foreground))]">High</span>
           </div>
         </div>
@@ -240,16 +243,16 @@ export default function ForceGraph({
       {/* Tooltip on hover */}
       {hoveredNode && (
         <div
-          className="fixed z-50 pointer-events-none px-3.5 py-2.5 rounded-lg shadow-xl border border-[hsl(var(--border))] bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))]"
+          className="fixed z-50 pointer-events-none px-4 py-3 rounded-xl shadow-2xl border border-[hsl(var(--border))] glass-strong"
           style={{
             left: tooltipPos.x + 14,
             top: tooltipPos.y - 12,
           }}
         >
-          <p className="text-sm font-semibold mb-1">{hoveredNode.name}</p>
+          <p className="text-sm font-semibold text-[hsl(var(--foreground))] mb-1">{hoveredNode.name}</p>
           <div className="space-y-0.5">
             {hoveredNode.sub_sector && (
-              <p className="text-[11px] text-[hsl(217,91%,60%)]">{hoveredNode.sub_sector}</p>
+              <p className="text-[11px] text-blue-400">{hoveredNode.sub_sector}</p>
             )}
             {hoveredNode.funding && (
               <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
@@ -272,7 +275,7 @@ export default function ForceGraph({
               </p>
             )}
           </div>
-          <p className="text-[9px] text-[hsl(var(--muted-foreground))] mt-1.5 pt-1 border-t border-[hsl(var(--border))]/50">
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]/60 mt-2 pt-1.5 border-t border-[hsl(var(--border))]/30">
             Click for details
           </p>
         </div>
