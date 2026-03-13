@@ -30,6 +30,34 @@ from backend.validation import QueryValidation, validate_query_rules, validate_q
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# ---------------------------------------------------------------------------
+# Cost estimation
+# ---------------------------------------------------------------------------
+# Approximate token costs (USD per 1M tokens) — update when switching models
+_MODEL_COSTS = {
+    "deepseek/deepseek-v3.2": {"input": 0.14, "output": 0.28},
+    "openai/gpt-4o": {"input": 2.50, "output": 10.00},
+    "anthropic/claude-sonnet-4": {"input": 3.00, "output": 15.00},
+}
+
+
+def _estimate_cost(mode: str, model: str) -> float | None:
+    """Rough cost estimate based on mode and model. Returns USD."""
+    costs = _MODEL_COSTS.get(model)
+    if not costs:
+        return None
+    # Approximate token usage by mode (measured from real runs)
+    if mode == "explore":
+        input_tokens, output_tokens = 8_000, 4_000
+    else:
+        input_tokens, output_tokens = 25_000, 8_000
+    return round(
+        (input_tokens / 1_000_000) * costs["input"]
+        + (output_tokens / 1_000_000) * costs["output"],
+        4,
+    )
+
+
 # Startup check — log whether API keys are loaded
 _s = get_settings()
 logger.info("OPENROUTER_API_KEY loaded: %s", bool(_s.openrouter_api_key))
@@ -267,6 +295,7 @@ async def query(req: QueryRequest):
                 "critic": critic_data,
                 "query": req.query,
                 "mode": req.mode,
+                "estimated_cost_usd": _estimate_cost(req.mode, settings.llm_model),
             }
 
             # Cache the result
