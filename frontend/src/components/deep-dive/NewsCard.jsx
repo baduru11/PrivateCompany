@@ -8,12 +8,6 @@ const borderColors = {
   negative: "border-l-red-500",
 };
 
-/**
- * News item card with colored left border based on sentiment.
- *
- * Props:
- *  - newsItem: { title, date, snippet, sentiment, source_url }
- */
 export default function NewsCard({ newsItem }) {
   if (!newsItem) return null;
 
@@ -28,7 +22,8 @@ export default function NewsCard({ newsItem }) {
   return (
     <div
       className={cn(
-        "rounded-md border border-[hsl(var(--border))] border-l-4 bg-[hsl(var(--card))] p-4 space-y-2",
+        "rounded-xl border border-[hsl(var(--border))] border-l-[3px] bg-[hsl(var(--card))] p-4 space-y-2",
+        "hover-glow transition-all",
         borderColors[sentiment] || borderColors.neutral
       )}
     >
@@ -38,7 +33,7 @@ export default function NewsCard({ newsItem }) {
             {title}
           </h4>
           {date && (
-            <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]/70 mt-1">
               {date}
             </p>
           )}
@@ -50,10 +45,10 @@ export default function NewsCard({ newsItem }) {
               href={source_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] transition-all cursor-pointer"
               title="View source"
             >
-              <ExternalLink className="h-4 w-4" />
+              <ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}
         </div>

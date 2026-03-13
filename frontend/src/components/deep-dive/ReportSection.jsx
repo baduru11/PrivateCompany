@@ -1,11 +1,10 @@
-import { Card, CardHeader, CardTitle, CardContent } from "../ui/card";
 import { cn } from "../../lib/utils";
 import ConfidenceBadge from "../shared/ConfidenceBadge";
 
 const borderColorMap = {
-  high: "border-t-emerald-500/60",
-  medium: "border-t-amber-500/60",
-  low: "border-t-red-500/60",
+  high: "border-l-emerald-500/50",
+  medium: "border-l-amber-500/50",
+  low: "border-l-red-500/50",
 };
 
 function getBorderClass(confidence) {
@@ -14,18 +13,6 @@ function getBorderClass(confidence) {
   return borderColorMap.low;
 }
 
-/**
- * Reusable report section card with confidence header and scroll anchor.
- *
- * Props:
- *  - id: string (scroll anchor id)
- *  - title: string
- *  - confidence: float 0-1
- *  - sourceCount: int
- *  - sourceUrls: array of { url, snippet? }
- *  - children: section content
- *  - className: optional extra classes
- */
 export default function ReportSection({
   id,
   title,
@@ -38,18 +25,20 @@ export default function ReportSection({
   const hasBadge = confidence !== undefined && confidence !== null;
 
   return (
-    <section id={id} className="scroll-mt-6">
-      <Card
+    <section id={id} className="scroll-mt-8 animate-init animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+      <div
         className={cn(
-          "border-t-2",
-          hasBadge ? getBorderClass(confidence) : "border-t-[hsl(var(--border))]",
+          "rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] overflow-hidden",
+          "border-l-[3px]",
+          hasBadge ? getBorderClass(confidence) : "border-l-[hsl(var(--border))]",
           className
         )}
       >
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-3">
-          <CardTitle className="text-lg font-semibold text-[hsl(var(--foreground))]">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 pb-4">
+          <h2 className="text-lg font-semibold text-[hsl(var(--foreground))]">
             {title}
-          </CardTitle>
+          </h2>
           {hasBadge && (
             <ConfidenceBadge
               confidence={confidence}
@@ -57,9 +46,10 @@ export default function ReportSection({
               sourceUrls={sourceUrls}
             />
           )}
-        </CardHeader>
-        <CardContent className="px-4 pb-4 pt-0">{children}</CardContent>
-      </Card>
+        </div>
+        {/* Content */}
+        <div className="px-5 pb-5">{children}</div>
+      </div>
     </section>
   );
 }

@@ -2,14 +2,6 @@ import { useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 import { dotClasses, getConfidenceLevel } from "../shared/ConfidenceBadge";
 
-/**
- * Sticky left sidebar navigation for Deep Dive sections.
- * Highlights the active section based on scroll position via IntersectionObserver.
- *
- * Props:
- *  - sections: Array of { id, title, confidence }
- *  - activeSection: string (controlled) — if provided, overrides internal tracking
- */
 export default function SectionNav({ sections = [], activeSection: controlledActive }) {
   const [observedActive, setObservedActive] = useState(sections[0]?.id || "");
   const activeSection = controlledActive ?? observedActive;
@@ -22,7 +14,6 @@ export default function SectionNav({ sections = [], activeSection: controlledAct
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // Find the topmost visible section
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
@@ -49,8 +40,11 @@ export default function SectionNav({ sections = [], activeSection: controlledAct
   };
 
   return (
-    <nav className="w-44 shrink-0 sticky top-0 h-fit py-4 pr-4">
-      <ul className="space-y-1">
+    <nav className="w-48 shrink-0 sticky top-0 h-fit py-5 pr-4 pl-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]/60 px-3 mb-3">
+        Sections
+      </p>
+      <ul className="space-y-0.5">
         {sections.map((section) => {
           const isActive = activeSection === section.id;
           const level = section.confidence != null
@@ -63,9 +57,9 @@ export default function SectionNav({ sections = [], activeSection: controlledAct
                 type="button"
                 onClick={() => handleClick(section.id)}
                 className={cn(
-                  "w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm text-left transition-colors",
+                  "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]",
                   isActive
-                    ? "bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] font-medium"
+                    ? "bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] font-medium border-l-2 border-[hsl(var(--primary))] -ml-px"
                     : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]/50 hover:text-[hsl(var(--foreground))]"
                 )}
               >
