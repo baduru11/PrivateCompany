@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Literal
 
@@ -27,7 +27,7 @@ from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from backend.cache import CacheManager
 from backend.config import get_settings
 from backend.graph import build_deep_dive_graph, build_explore_graph
-from backend.validation import QueryValidation, validate_query_rules, validate_query_semantic
+from backend.validation import QueryValidation, QuerySuggestion, validate_query_rules, validate_query_semantic, suggest_query
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +65,7 @@ _s = get_settings()
 logger.info("OPENROUTER_API_KEY loaded: %s", bool(_s.openrouter_api_key))
 logger.info("TAVILY_API_KEY loaded: %s", bool(_s.tavily_api_key))
 logger.info("EXA_API_KEY loaded: %s", bool(_s.exa_api_key))
+logger.info("SERPER_API_KEY loaded: %s", bool(_s.serper_api_key))
 
 # ---------------------------------------------------------------------------
 # Fixture loading for offline / demo mode
@@ -209,6 +210,16 @@ class ValidateRequest(BaseModel):
         return v.strip()
 
 
+class SuggestRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    mode: Literal["explore", "deep_dive"]
+
+    @field_validator("query")
+    @classmethod
+    def strip_query(cls, v: str) -> str:
+        return v.strip()
+
+
 @app.post("/api/validate")
 async def validate(req: ValidateRequest):
     """Quick pre-flight validation: rule-based + LLM semantic check."""
@@ -220,6 +231,33 @@ async def validate(req: ValidateRequest):
     # Tier 3: LLM semantic
     semantic_result = await validate_query_semantic(req.query)
     return semantic_result
+
+
+@app.post("/api/suggest")
+async def suggest(req: SuggestRequest):
+    """Validate + suggest refined queries in one step."""
+    # Tier 2: rule-based (instant)
+    rules_result = validate_query_rules(req.query)
+    if not rules_result.is_valid:
+        return QuerySuggestion(
+            is_valid=False,
+            original_query=req.query,
+            mode=req.mode,
+            reason=rules_result.reason,
+        )
+
+    # Skip suggestions for fixture/cached queries
+    if get_fixture(req.mode, req.query) or cache.get_report(req.mode, req.query):
+        return QuerySuggestion(
+            is_valid=True,
+            confidence=1.0,
+            suggestions=[req.query],
+            original_query=req.query,
+            mode=req.mode,
+        )
+
+    # LLM: validate + suggest in one call
+    return await suggest_query(req.query, req.mode)
 
 
 @app.post("/api/query")
@@ -239,15 +277,11 @@ async def query(req: QueryRequest):
     if cached is not None:
         return CachedResponse(data=cached)
 
-    # --- Tier 3: LLM semantic validation (runs after cache/fixture) ---------
-    semantic = await validate_query_semantic(req.query)
-    if not semantic.is_valid:
-        raise HTTPException(
-            status_code=422,
-            detail=semantic.reason + (f" Suggestion: {semantic.suggestion}" if semantic.suggestion else ""),
-        )
-
     # --- Cache miss: stream via SSE ----------------------------------------
+    # Note: Tier 3 semantic validation removed — /api/suggest already validates
+    # with web-search grounding. Tier 2 rule-based validation still runs in
+    # QueryRequest.query_not_blank. Keeping Tier 3 here was blocking valid
+    # queries for companies the LLM doesn't know about.
     NODE_DETAILS = {
         "planner": "Planning search strategy...",
         "searcher": "Searching for company data...",
@@ -312,7 +346,7 @@ async def query(req: QueryRequest):
                         if hasattr(report_obj, "model_dump"):
                             report_dict = report_obj.model_dump()
                             # Stream each top-level section as it "appears"
-                            for key in ["overview", "funding", "key_people", "product_technology", "recent_news", "competitors", "red_flags"]:
+                            for key in ["overview", "funding", "key_people", "product_technology", "recent_news", "competitors", "red_flags", "market_opportunity", "business_model", "competitive_advantages", "traction", "risks"]:
                                 if key in report_dict and report_dict[key]:
                                     yield ServerSentEvent(
                                         data=json.dumps({"section": key, "content": report_dict[key]}),
@@ -357,11 +391,20 @@ async def query(req: QueryRequest):
                 data=json.dumps(final_payload),
                 event="complete",
             )
+        except asyncio.CancelledError:
+            # Client disconnected (e.g. user clicked Stop) — exit silently
+            logger.info("Client disconnected during %s pipeline for query=%s", req.mode, req.query)
+            return
+        except GeneratorExit:
+            # Generator was closed by the framework — exit silently
+            logger.info("SSE generator closed for %s query=%s", req.mode, req.query)
+            return
         except Exception as exc:
             logger.exception("Error running %s pipeline", req.mode)
-            yield ServerSentEvent(
-                data=json.dumps({"error": str(exc)}),
-                event="error",
-            )
+            with suppress(Exception):
+                yield ServerSentEvent(
+                    data=json.dumps({"error": str(exc)}),
+                    event="error",
+                )
 
     return EventSourceResponse(event_generator())

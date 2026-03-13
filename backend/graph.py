@@ -1,15 +1,13 @@
 # backend/graph.py
 """LangGraph state graph definitions for explore and deep-dive pipelines.
 
-Both graphs share the same topology:
-    Planner -> Searcher -> Profiler -> Synthesis -> Critic
-with a conditional edge from Critic back to Planner when should_retry=True,
-capped at 1 retry by the Critic node itself.
+Both graphs share the same topology (linear, no retries):
+    Planner -> Searcher -> Profiler -> Synthesis -> Critic -> END
 """
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Literal, Union
+from typing import Annotated, Union
 
 from langgraph.graph import END, START, StateGraph
 
@@ -41,17 +39,7 @@ class AgentState(TypedDict, total=False):
     company_profiles: list[CompanyProfile]
     report: Union[ExploreReport, DeepDiveReport]
     critic_report: CriticReport
-    retry_count: int
-    retry_targets: list[str]
     status_events: Annotated[list[StatusEvent], operator.add]
-
-
-def should_retry(state: AgentState) -> Literal["planner", "end"]:
-    """Conditional edge: route back to planner on retry, otherwise finish."""
-    critic = state.get("critic_report")
-    if critic and critic.should_retry:
-        return "planner"
-    return "end"
 
 
 def _build_graph() -> StateGraph:
@@ -69,14 +57,7 @@ def _build_graph() -> StateGraph:
     graph.add_edge("searcher", "profiler")
     graph.add_edge("profiler", "synthesis")
     graph.add_edge("synthesis", "critic")
-    graph.add_conditional_edges(
-        "critic",
-        should_retry,
-        {
-            "planner": "planner",
-            "end": END,
-        },
-    )
+    graph.add_edge("critic", END)
 
     return graph
 
