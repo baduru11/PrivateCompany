@@ -2,7 +2,7 @@
 from __future__ import annotations
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage
-from backend.config import get_llm
+from backend.config import get_llm, invoke_structured
 from backend.models import SearchPlan
 
 logger = logging.getLogger(__name__)
@@ -12,41 +12,41 @@ Given a sector query, generate a search plan to discover 10-20 companies in this
 Output search terms that will find companies, their funding, and key details.
 Include sub-sector categories to organize the landscape."""
 
-DEEP_DIVE_PROMPT = """You are a competitive intelligence research planner.
-Given a company name, generate 6-8 specific search terms to find detailed intelligence.
+DEEP_DIVE_PROMPT = """You are a competitive intelligence research planner for investor due diligence.
+Given a company name, generate 8-10 specific search terms to find comprehensive intelligence.
 Include the company name in every search term. Cover these categories:
+
+CORE INTELLIGENCE:
 - "{company} funding rounds investors valuation"
 - "{company} founders leadership team executives"
-- "{company} headquarters employees headcount"
+- "{company} headquarters employees headcount founding date"
 - "{company} product technology platform"
-- "{company} latest news announcements 2024 2025"
-- "{company} competitors alternatives market"
-- "{company} controversies risks concerns"
-- "{company} Crunchbase OR PitchBook OR LinkedIn"
-Replace {company} with the actual company name."""
+- "{company} latest news announcements 2024 2025 2026"
+
+COMPETITOR & MARKET ANALYSIS:
+- "{company} competitors alternatives market landscape"
+- "{company} market size TAM total addressable market"
+
+DUE DILIGENCE:
+- "{company} revenue customers growth traction business model"
+- "{company} competitive advantages moat differentiation"
+- "{company} regulatory risks concerns controversies"
+
+Replace {company} with the actual company name.
+Generate 8-10 search terms. Quality over quantity."""
 
 
 def plan_search(state: dict) -> dict:
     llm = get_llm()
-    structured_llm = llm.with_structured_output(SearchPlan)
 
     query = state["query"]
     mode = state["mode"]
     prompt = EXPLORE_PROMPT if mode == "explore" else DEEP_DIVE_PROMPT
 
-    retry_context = ""
-    if state.get("retry_count", 0) > 0:
-        targets = state.get("retry_targets", [])
-        if targets:
-            retry_context = f"\n\nPrevious search had low confidence in these sections: {', '.join(targets)}. Generate search terms specifically targeting these topics."
-        elif state.get("critic_report"):
-            gaps = state["critic_report"].gaps
-            retry_context = f"\n\nPrevious search had gaps: {', '.join(gaps)}. Focus on filling these."
-
     try:
-        plan = structured_llm.invoke([
+        plan = invoke_structured(llm, SearchPlan, [
             SystemMessage(content=prompt),
-            HumanMessage(content=f"Query: {query}{retry_context}")
+            HumanMessage(content=f"Query: {query}")
         ])
     except Exception as exc:
         logger.error("Planner LLM call failed for query=%s: %s", query, exc)
