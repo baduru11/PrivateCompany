@@ -14,6 +14,7 @@ warnings.filterwarnings("ignore", message="urllib3.*chardet.*charset_normalizer"
 import asyncio
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Literal
 
@@ -226,15 +227,25 @@ async def query(req: QueryRequest):
 
     async def event_generator():
         try:
+            # Set up checkpointer for graph state persistence
+            checkpointer = None
+            try:
+                from langgraph.checkpoint.sqlite import SqliteSaver
+                checkpointer = SqliteSaver.from_conn_string("checkpoints.db")
+            except ImportError:
+                logger.info("SqliteSaver not available, running without checkpointing")
+
             # Pick the right graph builder
             if req.mode == "explore":
-                graph = build_explore_graph()
+                graph = build_explore_graph(checkpointer=checkpointer)
             else:
-                graph = build_deep_dive_graph()
+                graph = build_deep_dive_graph(checkpointer=checkpointer)
+
+            thread_id = str(uuid.uuid4())
 
             # Emit "start" event
             yield ServerSentEvent(
-                data=json.dumps({"node": "system", "status": "running", "detail": f"Starting {req.mode} pipeline"}),
+                data=json.dumps({"node": "system", "status": "running", "detail": f"Starting {req.mode} pipeline", "thread_id": thread_id}),
                 event="status",
             )
 
@@ -252,10 +263,11 @@ async def query(req: QueryRequest):
                 {"query": req.query, "mode": req.mode},
                 stream_mode="updates",
                 config={
+                    "configurable": {"thread_id": thread_id},
                     "metadata": {
                         "mode": req.mode,
                         "query": req.query,
-                    }
+                    },
                 },
             ):
                 for node_name, output in chunk.items():

@@ -216,3 +216,18 @@ class TestTargetedRetry:
         mock_critic.low_confidence_sections = []
         state = {"critic_report": mock_critic, "retry_count": 0}
         assert should_retry(state) == "end"
+
+
+class TestCheckpointing:
+    def test_graph_compiles_with_checkpointer(self):
+        """Graph should compile successfully with SqliteSaver checkpointer."""
+        try:
+            from langgraph.checkpoint.sqlite import SqliteSaver
+        except ImportError:
+            pytest.skip("langgraph-checkpoint-sqlite not installed")
+
+        from backend.graph import _build_graph
+        graph = _build_graph()
+        with SqliteSaver.from_conn_string(":memory:") as checkpointer:
+            compiled = graph.compile(checkpointer=checkpointer)
+            assert compiled is not None

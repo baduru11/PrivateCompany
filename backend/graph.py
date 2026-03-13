@@ -81,7 +81,7 @@ def _build_graph() -> StateGraph:
     return graph
 
 
-def build_explore_graph():
+def build_explore_graph(checkpointer=None):
     """Compile the explore-mode graph.
 
     Usage::
@@ -90,10 +90,10 @@ def build_explore_graph():
         result = graph.invoke({"query": "AI healthcare startups", "mode": "explore"})
     """
     graph = _build_graph()
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
-def build_deep_dive_graph():
+def build_deep_dive_graph(checkpointer=None):
     """Compile the deep-dive-mode graph.
 
     Usage::
@@ -102,4 +102,4 @@ def build_deep_dive_graph():
         result = graph.invoke({"query": "Acme Corp", "mode": "deep_dive"})
     """
     graph = _build_graph()
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
