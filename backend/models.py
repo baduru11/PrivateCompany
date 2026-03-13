@@ -51,6 +51,13 @@ class CompanyProfile(BaseModel):
         return self
 
 
+class Citation(BaseModel):
+    id: int
+    url: str
+    snippet: str = ""
+    extracted_at: Optional[str] = None
+
+
 class ExploreCompany(BaseModel):
     name: str
     sub_sector: str = "Unknown"
@@ -162,10 +169,3 @@ class StatusEvent(BaseModel):
     node: str
     status: Literal["running", "complete", "error", "retrying"]
     detail: str
-
-
-class Citation(BaseModel):
-    id: int
-    url: str
-    snippet: str = ""
-    extracted_at: Optional[str] = None

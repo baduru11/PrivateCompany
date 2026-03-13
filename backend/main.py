@@ -90,9 +90,37 @@ def get_fixture(mode: str, query: str) -> dict | None:
     return None
 
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    """Manage app-level resources like the SqliteSaver checkpointer."""
+    checkpointer = None
+    try:
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        cp_path = Path(settings.cache_dir) / "checkpoints.db"
+        checkpointer = SqliteSaver.from_conn_string(str(cp_path))
+        checkpointer.__enter__()
+        logger.info("SqliteSaver checkpointer initialized at %s", cp_path)
+    except ImportError:
+        logger.info("SqliteSaver not available, running without checkpointing")
+    except Exception as exc:
+        logger.warning("Failed to initialize SqliteSaver: %s", exc)
+
+    app.state.checkpointer = checkpointer
+    yield
+
+    if checkpointer is not None:
+        try:
+            checkpointer.__exit__(None, None, None)
+        except Exception:
+            pass
+
+
 app = FastAPI(
     title="Private Company Intelligence Agent",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS — allow all origins for development
@@ -227,13 +255,7 @@ async def query(req: QueryRequest):
 
     async def event_generator():
         try:
-            # Set up checkpointer for graph state persistence
-            checkpointer = None
-            try:
-                from langgraph.checkpoint.sqlite import SqliteSaver
-                checkpointer = SqliteSaver.from_conn_string("checkpoints.db")
-            except ImportError:
-                logger.info("SqliteSaver not available, running without checkpointing")
+            checkpointer = app.state.checkpointer
 
             # Pick the right graph builder
             if req.mode == "explore":

@@ -46,11 +46,11 @@ class AgentState(TypedDict, total=False):
     status_events: Annotated[list[StatusEvent], operator.add]
 
 
-def should_retry(state: AgentState) -> Literal["searcher", "end"]:
-    """Conditional edge: route back to searcher on retry, otherwise finish."""
+def should_retry(state: AgentState) -> Literal["planner", "end"]:
+    """Conditional edge: route back to planner on retry, otherwise finish."""
     critic = state.get("critic_report")
     if critic and critic.should_retry:
-        return "searcher"
+        return "planner"
     return "end"
 
 
@@ -73,7 +73,7 @@ def _build_graph() -> StateGraph:
         "critic",
         should_retry,
         {
-            "searcher": "searcher",
+            "planner": "planner",
             "end": END,
         },
     )

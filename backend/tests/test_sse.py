@@ -2,6 +2,7 @@
 """Tests for SSE streaming endpoints using fixture/cached queries."""
 import json
 import pytest
+from unittest.mock import patch, MagicMock
 
 try:
     from fastapi.testclient import TestClient
@@ -32,6 +33,19 @@ class TestSSEFixtureQueries:
     def test_fixture_explore_returns_json(self, client):
         """Explore fixture queries should return immediate JSON."""
         resp = client.post("/api/query", json={"query": "AI inference chips", "mode": "explore"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cached"] is True
+
+    def test_cache_hit_returns_json(self, client):
+        """Cached reports should return immediate JSON."""
+        mock_cache = MagicMock()
+        mock_cache.get_report.return_value = {"report": {"test": True}, "_mode": "explore", "_query": "test"}
+
+        with patch("backend.main.cache", mock_cache):
+            with patch("backend.main.get_fixture", return_value=None):
+                resp = client.post("/api/query", json={"query": "cached query", "mode": "explore"})
+
         assert resp.status_code == 200
         data = resp.json()
         assert data["cached"] is True

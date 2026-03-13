@@ -101,12 +101,12 @@ class TestGraphEdges:
         assert "critic" in synthesis_targets
 
     def test_critic_has_conditional_edges(self):
-        """Critic node should have edges to both searcher (retry) and __end__."""
+        """Critic node should have edges to both planner (retry) and __end__."""
         graph = build_explore_graph()
         graph_view = graph.get_graph()
         edges = graph_view.edges
         critic_targets = {e.target for e in edges if e.source == "critic"}
-        assert "searcher" in critic_targets
+        assert "planner" in critic_targets
         assert "__end__" in critic_targets
 
 
@@ -129,14 +129,14 @@ class TestShouldRetry:
         state: AgentState = {"critic_report": critic}  # type: ignore[typeddict-item]
         assert should_retry(state) == "end"
 
-    def test_returns_searcher_when_should_retry_true(self):
+    def test_returns_planner_when_should_retry_true(self):
         critic = CriticReport(
             overall_confidence=0.2,
             should_retry=True,
             retry_queries=["more data"],
         )
         state: AgentState = {"critic_report": critic}  # type: ignore[typeddict-item]
-        assert should_retry(state) == "searcher"
+        assert should_retry(state) == "planner"
 
 
 # ---------------------------------------------------------------------------
@@ -200,13 +200,13 @@ class TestGraphStateAccumulation:
 
 class TestTargetedRetry:
     def test_should_retry_uses_low_confidence_sections(self):
-        """should_retry returns 'searcher' when low_confidence_sections is non-empty."""
+        """should_retry returns 'planner' when low_confidence_sections is non-empty."""
         from backend.graph import should_retry
         mock_critic = MagicMock()
         mock_critic.should_retry = True
         mock_critic.low_confidence_sections = ["funding", "key_people"]
         state = {"critic_report": mock_critic, "retry_count": 0}
-        assert should_retry(state) == "searcher"
+        assert should_retry(state) == "planner"
 
     def test_should_retry_ends_when_no_low_confidence(self):
         """should_retry returns 'end' when low_confidence_sections is empty."""
