@@ -49,7 +49,7 @@ def critique(state: dict) -> dict:
     # Include truncated snippets so the critic can verify claims against actual content.
     # Cap at 60 signals with 500-char snippets to stay within token budget (~30k tokens).
     raw_text = "\n\n".join(
-        f"[{s.source}] {s.url}\n{s.snippet[:500]}"
+        f"[{s.source}] {s.url}\n{s.snippet[:600]}"
         for s in raw_signals[:60]
     ) if raw_signals else "No raw signals available"
 
@@ -60,7 +60,9 @@ def critique(state: dict) -> dict:
         ])
     except Exception as exc:
         logger.error("Critic LLM call failed: %s", exc)
-        raise RuntimeError(f"Critic failed: {exc}") from exc
+        # Degrade gracefully — the report is already complete from synthesis.
+        # Losing the critic is far better than losing the entire pipeline result.
+        critic_report = CriticReport(overall_confidence=0.0)
 
     # Derive low_confidence_sections from section_scores if the LLM didn't populate it
     if not critic_report.low_confidence_sections and critic_report.section_scores:

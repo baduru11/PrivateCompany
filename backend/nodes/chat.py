@@ -166,12 +166,16 @@ async def generate_chat_response(req: ChatRequest) -> AsyncGenerator[dict, None]
             max_tokens=1500,
         )
 
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield {
-                    "type": "token",
-                    "content": chunk.choices[0].delta.content,
-                }
+        try:
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield {
+                        "type": "token",
+                        "content": chunk.choices[0].delta.content,
+                    }
+        except Exception as stream_exc:
+            logger.warning("Stream interrupted: %s", stream_exc)
+            yield {"type": "error", "message": "Stream interrupted. Partial response may be incomplete."}
 
         # 7. Yield sources (unique source URLs)
         seen_urls: set[str] = set()
@@ -184,9 +188,10 @@ async def generate_chat_response(req: ChatRequest) -> AsyncGenerator[dict, None]
 
         yield {"type": "sources", "sources": unique_sources}
 
-        # 8. Done
+        # 8. Done — always sent so frontend never hangs
         yield {"type": "done"}
 
     except Exception:
         logger.exception("Error in chat generation")
         yield {"type": "error", "message": "An error occurred while generating the response. Please try again."}
+        yield {"type": "done"}
