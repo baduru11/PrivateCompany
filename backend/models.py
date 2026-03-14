@@ -131,6 +131,20 @@ class ExploreCompany(BaseModel):
     confidence: float = 0.0
     source_count: int = 0
 
+    @field_validator("founding_year", mode="before")
+    @classmethod
+    def _coerce_founding_year(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str):
+            try:
+                return int(v)
+            except ValueError:
+                return None
+        return None
+
     @field_validator("confidence", mode="before")
     @classmethod
     def _clamp_confidence(cls, v):
