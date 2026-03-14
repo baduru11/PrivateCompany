@@ -1,4 +1,4 @@
-import { X, ArrowRight, Building2, Calendar, MapPin, DollarSign, Users } from "lucide-react";
+import { X, ArrowRight, Building2, Calendar, MapPin, DollarSign, Users, ExternalLink } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -90,6 +90,19 @@ export default function CompanySidebar({
                 )}
               </div>
             </div>
+
+            {/* Website link */}
+            {company.website && (
+              <a
+                href={company.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                {company.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              </a>
+            )}
 
             {/* Description */}
             {company.description && (

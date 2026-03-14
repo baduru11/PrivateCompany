@@ -121,6 +121,7 @@ class Citation(BaseModel):
 class ExploreCompany(BaseModel):
     name: str
     sub_sector: str = "Unknown"
+    website: Optional[str] = None
     funding_total: Optional[str] = None
     funding_numeric: float = 0.0
     funding_stage: Optional[str] = None

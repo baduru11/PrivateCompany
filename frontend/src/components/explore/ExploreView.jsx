@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowRight,
+  ExternalLink,
 } from "lucide-react";
 import ForceGraph from "./ForceGraph";
 import CompanySidebar from "./CompanySidebar";
@@ -105,6 +106,18 @@ function CompanyRow({ company, index, onSelect, onDeepDive }) {
         <div className="flex items-center gap-2.5">
           <span className="text-[10px] text-[hsl(var(--muted-foreground))]/50 font-mono w-5 tabular-nums">{index + 1}</span>
           <span className="font-medium text-[hsl(var(--foreground))] group-hover:text-[hsl(var(--primary))] transition-colors">{company.name}</span>
+          {company.website && (
+            <a
+              href={company.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-[hsl(var(--muted-foreground))]/50 hover:text-[hsl(var(--primary))] transition-colors"
+              title={company.website}
+            >
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
         </div>
       </td>
       <td className="py-3.5 px-3">
@@ -166,6 +179,7 @@ export default function ExploreView({ data, onDeepDive }) {
       id: c.id || c.name || `company-${i}`,
       name: c.name || "Unknown",
       sub_sector: c.sub_sector || c.sector || "",
+      website: c.website || "",
       funding_numeric: c.funding_numeric || 0,
       funding: c.funding || c.funding_total || c.funding_amount || "",
       funding_stage: c.funding_stage || c.stage || "",

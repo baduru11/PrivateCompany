@@ -22,20 +22,47 @@ logger = logging.getLogger(__name__)
 EXPLORE_SYSTEM = """You are a competitive intelligence analyst. Given company profiles,
 create a structured competitive landscape report.
 
-INPUT FIELD MAPPING — populate each company with:
-- name: company name
-- sub_sector: specific technology/market niche
-- funding_total: string like "$720M", "Public (IPO 1999)"
-- funding_numeric: number in millions (0 for public companies)
-- funding_stage: e.g. "Seed", "Series A", "Series B", "Series C+", "IPO / Public"
-- founding_year: integer year
-- headquarters: city, state/country
-- key_investors: list of investor names
-- description: 2-3 sentence company description
-- confidence: 0.0-1.0 based on source coverage
-- source_count: number of sources used
+STRICT RULES:
+1. RELEVANCE: Only include companies that are DIRECTLY relevant to the query.
+   - Exclude generic tech giants (Microsoft, Google, Amazon, Apple) unless they have a
+     dedicated product specifically in this space.
+   - Exclude YouTube videos, blog posts, listicles, or non-companies.
+   - Exclude tiny hobby projects, personal tools, or single-developer side projects with
+     no evidence of being a real business (no team, no funding, no product traction).
+2. QUALITY: Prioritize by business maturity. List the most significant first:
+   - Tier 1: Funded startups or established companies with teams, investors, press coverage
+   - Tier 2: Apps/products with real users, reviews, or meaningful traction (app store presence,
+     user testimonials, active community) — these are valid even without traditional funding
+   - Exclude: Hobby projects, demo apps, or tools with no evidence of real usage
+3. DEDUPLICATION: Never include the same company twice. If a company appears multiple times
+   in the source data, merge the information into a single entry.
+4. LIMIT: Include at most 20 companies. Quality over quantity — 10 well-documented companies
+   is better than 20 sparse ones.
+5. CONFIDENCE: Set confidence based on actual data quality:
+   - 0.8-1.0: Multiple sources confirm key facts (funding, founding year, etc.)
+   - 0.5-0.7: Some data available but gaps exist
+   - 0.2-0.4: Very sparse data, mostly just a name and description
 
-CRITICAL: Only include information from the provided data. Write 'Data not available' for missing fields. Never guess.
+INPUT FIELD MAPPING — populate each company with:
+- name: company name (official name, not a product feature description)
+- sub_sector: specific technology/market niche within the queried sector
+- website: company website URL (e.g. "https://dishgen.com"). Extract from source data.
+- funding_total: string like "$720M", "Public (IPO 1999)". Use null if unknown.
+- funding_numeric: number in millions (0 if unknown or public)
+- funding_stage: e.g. "Seed", "Series A", "Series B", "Series C+", "IPO / Public". Use null if unknown.
+- founding_year: integer year. Use null if unknown (do NOT write "Data not available").
+- headquarters: city, state/country. Use null if unknown.
+- key_investors: list of investor names. Use empty list [] if unknown.
+- description: 2-3 sentence company description focused on what makes them relevant to the query
+- confidence: 0.0-1.0 based on the rules above
+- source_count: number of distinct sources used for this company
+
+CRITICAL SOURCING RULES:
+- Only include information explicitly found in the provided source data.
+- Do NOT use your pretrained knowledge to fill in company details. If a fact is not in the
+  sources, use null. Every data point must come from the provided text.
+- Do NOT write string values like "Data not available" — use null instead.
+- Do NOT invent or guess website URLs, funding amounts, or founding years.
 
 CITATIONS: For every factual claim, include an inline citation marker like [1], [2], etc.
 Populate the 'citations' array with corresponding entries: {id, url, snippet}.
@@ -467,14 +494,30 @@ def synthesize(state: dict) -> dict:
                 SystemMessage(content=EXPLORE_SYSTEM),
                 HumanMessage(content=f"Query: {state['query']}\n\nCompany profiles:\n{profiles_text}")
             ])
+            # Post-process: deduplicate and limit
+            seen = set()
+            deduped = []
+            for c in report.companies:
+                key = c.name.strip().lower()
+                if key not in seen:
+                    seen.add(key)
+                    deduped.append(c)
+            report.companies = deduped[:20]
         except Exception as exc:
             logger.error("Synthesis LLM call failed for query=%s mode=%s: %s — building fallback report from profiles", state['query'], mode, exc)
             # Graceful degradation: build a minimal ExploreReport from raw profiles
             fallback_companies = []
+            seen_names = set()
             for p in profiles:
+                name = (p.name or "Unknown").strip()
+                name_lower = name.lower()
+                if name_lower in seen_names or name_lower == "unknown":
+                    continue
+                seen_names.add(name_lower)
                 fallback_companies.append(ExploreCompany(
-                    name=p.name or "Unknown",
+                    name=name,
                     sub_sector=p.sub_sector or "Unknown",
+                    website=p.website,
                     funding_total=p.funding_total,
                     funding_numeric=_parse_funding_numeric(p.funding_total),
                     funding_stage=p.funding_stage,
@@ -485,6 +528,7 @@ def synthesize(state: dict) -> dict:
                     confidence=p.funding_confidence if p.funding_confidence else 0.2,
                     source_count=len(p.raw_sources) if p.raw_sources else 0,
                 ))
+            fallback_companies = fallback_companies[:20]
             sub_sectors = list({c.sub_sector for c in fallback_companies if c.sub_sector and c.sub_sector != "Unknown"})
             report = ExploreReport(
                 query=state["query"],
