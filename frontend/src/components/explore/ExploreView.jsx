@@ -333,11 +333,11 @@ export default function ExploreView({ data, onDeepDive }) {
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 relative overflow-hidden">
+      <div className="flex flex-1 min-h-0 relative overflow-hidden">
         {viewMode === "graph" ? (
           <>
             <div
-              className="flex-1 transition-all duration-300"
+              className="flex-1 h-full min-h-0 transition-all duration-300"
               style={{ marginRight: sidebarOpen ? "320px" : "0" }}
             >
               <ForceGraph

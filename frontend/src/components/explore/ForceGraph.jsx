@@ -1,9 +1,10 @@
 import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 
+// Muted, slightly desaturated palette (Obsidian-style)
 const SUB_SECTOR_COLORS = [
-  "#5B8DEF", "#6FCF97", "#F2994A", "#BB6BD9", "#56CCF2",
-  "#EB5757", "#F2C94C", "#27AE60", "#9B51E0", "#2D9CDB",
+  "#6B93D6", "#5EAD8A", "#D4915E", "#A76BBF", "#5EB8D4",
+  "#CF6B6B", "#D4B85E", "#4A9E6B", "#8B5EC2", "#4A8EBF",
 ];
 
 function getSectorColor(subSector, sectorMap) {
@@ -15,13 +16,23 @@ function getSectorColor(subSector, sectorMap) {
 }
 
 function fundingToRadius(funding, maxFunding, fundingLabel) {
-  if (!maxFunding) return 8;
+  if (!maxFunding) return 6;
   if ((!funding || funding === 0) && fundingLabel && /public|ipo/i.test(fundingLabel)) {
-    return 28;
+    return 22;
   }
-  if (!funding || funding === 0) return 10;
+  if (!funding || funding === 0) return 6;
   const normalized = Math.min(funding / maxFunding, 1);
-  return 6 + normalized * 28;
+  return 5 + normalized * 22;
+}
+
+// Parse hex color to r,g,b
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  return {
+    r: parseInt(h.substring(0, 2), 16),
+    g: parseInt(h.substring(2, 4), 16),
+    b: parseInt(h.substring(4, 6), 16),
+  };
 }
 
 export default function ForceGraph({
@@ -35,6 +46,7 @@ export default function ForceGraph({
   const [hoveredNode, setHoveredNode] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
+  // Track container size
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -50,11 +62,22 @@ export default function ForceGraph({
     return () => observer.disconnect();
   }, []);
 
+  // Zoom to fit after data loads
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg || companies.length === 0) return;
+    const timer = setTimeout(() => {
+      fg.zoomToFit(400, 60);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [companies]);
+
   const maxFunding = useMemo(() => {
     return Math.max(...companies.map((c) => c.funding_numeric || 0), 1);
   }, [companies]);
 
-  const graphData = useMemo(() => {
+  // Build neighbor sets for hover highlighting
+  const { graphData, neighborMap, sectorLegend } = useMemo(() => {
     const sectorColorMap = new Map();
     const nodes = companies.map((c) => ({
       id: c.id || c.name,
@@ -88,81 +111,153 @@ export default function ForceGraph({
       }
     });
 
-    return { nodes, links, sectorColorMap };
+    // Build neighbor map for hover dimming
+    const nMap = new Map();
+    nodes.forEach((n) => nMap.set(n.id, new Set()));
+    links.forEach((l) => {
+      const sid = typeof l.source === "object" ? l.source.id : l.source;
+      const tid = typeof l.target === "object" ? l.target.id : l.target;
+      nMap.get(sid)?.add(tid);
+      nMap.get(tid)?.add(sid);
+    });
+
+    const legend = [];
+    sectorColorMap.forEach((color, name) => legend.push({ name, color }));
+
+    return {
+      graphData: { nodes, links },
+      neighborMap: nMap,
+      sectorLegend: legend,
+    };
   }, [companies, maxFunding]);
 
-  const sectorLegend = useMemo(() => {
-    const entries = [];
-    if (graphData.sectorColorMap) {
-      graphData.sectorColorMap.forEach((color, name) => {
-        entries.push({ name, color });
-      });
-    }
-    return entries;
-  }, [graphData]);
+  // Check if a node is a neighbor of the hovered node
+  const isNeighbor = useCallback(
+    (nodeId) => {
+      if (!hoveredNode) return true; // no hover = all visible
+      if (nodeId === hoveredNode.id) return true;
+      return neighborMap.get(hoveredNode.id)?.has(nodeId) || false;
+    },
+    [hoveredNode, neighborMap]
+  );
 
   const nodeCanvasObject = useCallback(
-    (node, ctx) => {
-      // Skip rendering before force simulation positions the node
+    (node, ctx, globalScale) => {
       if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
 
-      const r = node.radius || 8;
+      const r = node.radius || 6;
       const isSelected = selectedNode && (selectedNode === node.id || selectedNode === node.name);
       const isHovered = hoveredNode && (hoveredNode.id === node.id);
+      const isNbr = isNeighbor(node.id);
 
-      // Glow effect for hovered/selected nodes
+      // Obsidian-style dimming: non-connected nodes fade to ~12% opacity
+      const nodeAlpha = hoveredNode ? (isNbr ? 1.0 : 0.12) : 1.0;
+      ctx.globalAlpha = nodeAlpha;
+
+      const { r: cr, g: cg, b: cb } = hexToRgb(node.color);
+
+      // Subtle outer glow for all nodes
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI);
+      const glowGrad = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 4);
+      glowGrad.addColorStop(0, `rgba(${cr},${cg},${cb},0.15)`);
+      glowGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      ctx.fillStyle = glowGrad;
+      ctx.fill();
+
+      // Stronger glow for hovered/selected
       if (isSelected || isHovered) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, r + 8, 0, 2 * Math.PI);
-        const gradient = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 8);
-        gradient.addColorStop(0, `${node.color}55`);
-        gradient.addColorStop(1, `${node.color}00`);
-        ctx.fillStyle = gradient;
+        ctx.arc(node.x, node.y, r + 10, 0, 2 * Math.PI);
+        const hoverGrad = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 10);
+        hoverGrad.addColorStop(0, `rgba(${cr},${cg},${cb},0.35)`);
+        hoverGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+        ctx.fillStyle = hoverGrad;
         ctx.fill();
       }
 
-      // Main circle with gradient
+      // Main circle
       ctx.beginPath();
       ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-      const grad = ctx.createRadialGradient(
-        node.x - r * 0.3, node.y - r * 0.3, r * 0.1,
-        node.x, node.y, r
-      );
-      grad.addColorStop(0, `${node.color}FF`);
-      grad.addColorStop(1, `${node.color}AA`);
-      ctx.fillStyle = grad;
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.85)`;
       ctx.fill();
 
-      // Border
-      ctx.strokeStyle = isSelected ? "#FFFFFF" : `${node.color}88`;
-      ctx.lineWidth = isSelected ? 2.5 : 1;
+      // Border ring
+      ctx.strokeStyle = isSelected
+        ? `rgba(255,255,255,0.9)`
+        : `rgba(${cr},${cg},${cb},0.4)`;
+      ctx.lineWidth = isSelected ? 2 : 0.8;
       ctx.stroke();
 
-      // Initial letter
+      // Initial letter (always visible inside node)
+      ctx.fillStyle = `rgba(255,255,255,${nodeAlpha * 0.9})`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = `bold ${Math.max(r * 0.65, 9)}px -apple-system, system-ui, sans-serif`;
+      ctx.font = `bold ${Math.max(r * 0.65, 8)}px -apple-system, system-ui, sans-serif`;
       ctx.fillText(node.initial, node.x, node.y);
 
-      // Company name label below node
-      ctx.fillStyle = "rgba(255,255,255,0.65)";
-      ctx.font = `${Math.max(Math.min(r * 0.5, 11), 8)}px -apple-system, system-ui, sans-serif`;
-      ctx.fillText(node.name, node.x, node.y + r + 10);
+      // Label below node — zoom-based fading (Obsidian-style LOD)
+      const zoom = globalScale || 1;
+      const labelAlpha = zoom > 1.5 ? 1.0
+        : zoom > 0.8 ? (zoom - 0.8) / 0.7
+        : 0;
+      // Always show label for hovered/selected nodes regardless of zoom
+      const showLabel = labelAlpha > 0.01 || isHovered || isSelected;
+      if (showLabel) {
+        const finalLabelAlpha = (isHovered || isSelected) ? 0.9 : labelAlpha * 0.6;
+        ctx.fillStyle = `rgba(255,255,255,${finalLabelAlpha * nodeAlpha})`;
+        ctx.font = `${Math.max(Math.min(r * 0.45, 10), 7)}px -apple-system, system-ui, sans-serif`;
+        ctx.fillText(node.name, node.x, node.y + r + 8);
+      }
+
+      ctx.globalAlpha = 1.0;
     },
-    [selectedNode, hoveredNode]
+    [selectedNode, hoveredNode, isNeighbor]
+  );
+
+  // Link rendering — Obsidian-style: dim non-connected links on hover
+  const linkCanvasObject = useCallback(
+    (link, ctx) => {
+      const source = link.source;
+      const target = link.target;
+      if (!Number.isFinite(source.x) || !Number.isFinite(target.x)) return;
+
+      const sid = typeof source === "object" ? source.id : source;
+      const tid = typeof target === "object" ? target.id : target;
+
+      let alpha, width;
+      if (!hoveredNode) {
+        // Default: subtle visible links
+        alpha = 0.08;
+        width = 0.5;
+      } else if (hoveredNode.id === sid || hoveredNode.id === tid) {
+        // Connected to hovered node: highlight
+        alpha = 0.35;
+        width = 1.2;
+      } else {
+        // Not connected: very dim
+        alpha = 0.02;
+        width = 0.3;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(source.x, source.y);
+      ctx.lineTo(target.x, target.y);
+      ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    },
+    [hoveredNode]
   );
 
   const nodePointerAreaPaint = useCallback((node, color, ctx) => {
     if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
-    const r = node.radius || 8;
+    const r = (node.radius || 6) + 5; // Slightly larger hit area
     ctx.beginPath();
-    ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI);
+    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
     ctx.fillStyle = color;
     ctx.fill();
   }, []);
-
-  const linkColor = useCallback(() => "rgba(255,255,255,0.04)", []);
 
   const handleNodeHover = useCallback((node) => {
     setHoveredNode(node || null);
@@ -182,27 +277,31 @@ export default function ForceGraph({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-[hsl(var(--background))]"
+      className="relative w-full h-full min-h-0 bg-[hsl(var(--background))]"
       onMouseMove={handleMouseMove}
     >
       <ForceGraph2D
         ref={graphRef}
-        graphData={{ nodes: graphData.nodes, links: graphData.links }}
+        graphData={graphData}
         width={dimensions.width}
         height={dimensions.height}
         backgroundColor="transparent"
         nodeCanvasObject={nodeCanvasObject}
         nodePointerAreaPaint={nodePointerAreaPaint}
-        linkColor={linkColor}
-        linkWidth={0.5}
+        linkCanvasObject={linkCanvasObject}
         onNodeHover={handleNodeHover}
         onNodeClick={handleNodeClick}
-        d3AlphaDecay={0.03}
-        d3VelocityDecay={0.3}
-        warmupTicks={50}
-        cooldownTicks={100}
+        // Obsidian-style force physics
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.25}
+        d3AlphaMin={0.001}
+        warmupTicks={80}
+        cooldownTicks={200}
         enableZoomInteraction={true}
         enablePanInteraction={true}
+        // Force configuration
+        dagMode={null}
+        onEngineStop={() => graphRef.current?.zoomToFit(300, 50)}
       />
 
       {/* Sector legend */}
