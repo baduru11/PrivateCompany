@@ -106,6 +106,45 @@ def _search_tavily(client, query: str, num_results: int, cache: CacheManager) ->
         return []
 
 
+def _search_patents(company_name: str, cache: CacheManager) -> list[RawCompanySignal]:
+    """Search Google Patents via Serper for patents assigned to a company."""
+    settings = get_settings()
+    if not settings.serper_api_key:
+        return []
+
+    query = f'site:patents.google.com "{company_name}" patent'
+    cached = cache.get_api("serper_patents", query)
+    if cached:
+        return [RawCompanySignal(**s) for s in cached]
+
+    import httpx
+
+    try:
+        resp = httpx.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": settings.serper_api_key},
+            json={"q": query, "num": 10},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        results = resp.json().get("organic", [])[:10]
+        signals = [
+            RawCompanySignal(
+                company_name=company_name,
+                url=r.get("link", ""),
+                snippet=r.get("snippet", ""),
+                source="google_patents",
+            )
+            for r in results
+        ]
+        cache.set_api("serper_patents", query, [s.model_dump() for s in signals])
+        logger.info("Google Patents search found %d results for %s", len(signals), company_name)
+        return signals
+    except Exception as exc:
+        logger.warning("Google Patents search failed for %s: %s", company_name, exc)
+        return []
+
+
 def search(state: dict) -> dict:
     plan: SearchPlan = state["search_plan"]
     mode = state["mode"]
@@ -128,7 +167,7 @@ def search(state: dict) -> dict:
     has_serper = bool(get_settings().serper_api_key)
     num_results = plan.target_company_count if mode == "explore" else 10
 
-    # Run all 3 providers concurrently
+    # Run all providers concurrently (+ patent search for deep_dive)
     from concurrent.futures import ThreadPoolExecutor
 
     def _run_exa():
@@ -152,16 +191,23 @@ def search(state: dict) -> dict:
                 results.extend(_search_serper(term, num_results, cache))
         return results
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    def _run_patents():
+        if mode == "deep_dive":
+            return _search_patents(state["query"].strip(), cache)
+        return []
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
         exa_future = pool.submit(_run_exa)
         tavily_future = pool.submit(_run_tavily)
         serper_future = pool.submit(_run_serper)
+        patent_future = pool.submit(_run_patents)
 
         exa_results = exa_future.result()
         tavily_results = tavily_future.result()
         serper_results = serper_future.result()
+        patent_results = patent_future.result()
 
-    # Interleave results from all 3 providers (round-robin) so the signal
+    # Interleave results from all providers (round-robin) so the signal
     # list has provider diversity instead of being dominated by whichever
     # provider's results are concatenated first.
     all_results = [exa_results, tavily_results, serper_results]
@@ -170,6 +216,10 @@ def search(state: dict) -> dict:
         for results in all_results:
             if i < len(results):
                 signals.append(results[i])
+
+    # Append patent results (supplementary, after main interleaved results)
+    if patent_results:
+        signals.extend(patent_results)
 
     if not signals:
         raise RuntimeError("Search failed: no results found from any provider")
@@ -190,10 +240,10 @@ def search(state: dict) -> dict:
             seen_urls.add(s.url)
             unique.append(s)
 
-    # Cap results — deep-dive needs more signals (40) to cover all
+    # Cap results — deep-dive needs more signals (50) to cover all
     # sections (governance, patents, partnerships, etc.) since the planner
-    # generates 14-16 diverse search terms.
-    max_signals = plan.target_company_count * 2 if mode == "explore" else 40
+    # generates 14-16 diverse search terms plus dedicated patent search.
+    max_signals = plan.target_company_count * 2 if mode == "explore" else 50
     signals = unique[:max_signals]
 
     # RAG ingestion — synchronous so chat is available immediately after report
