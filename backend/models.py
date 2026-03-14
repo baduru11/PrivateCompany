@@ -6,7 +6,37 @@ if a factual field is populated, a corresponding source URL must be provided.
 """
 from __future__ import annotations
 from typing import Optional, Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+# ---------------------------------------------------------------------------
+# Lenient validators — LLMs sometimes return out-of-range values.  Clamping
+# is better than rejecting the entire object (and losing all structured data).
+# ---------------------------------------------------------------------------
+
+def _clamp_unit(v, default: float = 0.0) -> float:
+    """Clamp to [0.0, 1.0]."""
+    try:
+        return max(0.0, min(1.0, float(v)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _clamp_int(v, lo: int, hi: int, default: int = 0) -> int:
+    """Clamp integer to [lo, hi]."""
+    try:
+        return max(lo, min(hi, int(v)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_literal(v, valid: set[str], default: str) -> str:
+    """Normalize a string to a valid Literal member."""
+    if isinstance(v, str):
+        low = v.lower().strip()
+        if low in valid:
+            return low
+    return default
 
 
 class SearchPlan(BaseModel):
@@ -31,7 +61,7 @@ class CompanyProfile(BaseModel):
     crunchbase_url: Optional[str] = None
     funding_total: Optional[str] = None
     funding_source_url: Optional[str] = None
-    funding_confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    funding_confidence: float = 0.0
     funding_stage: Optional[str] = None
     funding_stage_source_url: Optional[str] = None
     key_investors: list[str] = []
@@ -66,10 +96,18 @@ class CompanyProfile(BaseModel):
     employee_count_history: list[dict] = []
     operating_status: Optional[str] = None
 
+    @field_validator("funding_confidence", mode="before")
+    @classmethod
+    def _clamp_funding_confidence(cls, v):
+        return _clamp_unit(v)
+
     @model_validator(mode="after")
     def funding_must_have_source(self):
         if self.funding_total and not self.funding_source_url:
-            raise ValueError("funding_total set without funding_source_url")
+            # Don't raise — LLMs often omit source URLs. Losing the entire
+            # profile over a missing source URL is far worse than having
+            # unverified funding data. The critic node will flag it.
+            self.funding_confidence = 0.0
         return self
 
 
@@ -90,8 +128,13 @@ class ExploreCompany(BaseModel):
     headquarters: Optional[str] = None
     key_investors: list[str] = []
     description: Optional[str] = None
-    confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    confidence: float = 0.0
     source_count: int = 0
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v):
+        return _clamp_unit(v)
 
 
 class ExploreReport(BaseModel):
@@ -106,17 +149,27 @@ class ExploreReport(BaseModel):
 class DeepDiveSection(BaseModel):
     title: str
     content: str
-    confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    confidence: float = 0.0
     source_urls: list[str] = []
     source_count: int = 0
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v):
+        return _clamp_unit(v)
 
 
 class SectionProse(BaseModel):
     """Output schema for a single section's parallel LLM call."""
     content: str
-    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    confidence: float = 0.5
     source_urls: list[str] = []
     source_count: int = 0
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v):
+        return _clamp_unit(v, 0.5)
 
 
 class FundingRound(BaseModel):
@@ -136,6 +189,11 @@ class NewsItem(BaseModel):
     source_url: Optional[str] = None
     snippet: str
     sentiment: Literal["positive", "neutral", "negative"] = "neutral"
+
+    @field_validator("sentiment", mode="before")
+    @classmethod
+    def _normalize_sentiment(cls, v):
+        return _normalize_literal(v, {"positive", "neutral", "negative"}, "neutral")
 
 
 class CompetitorEntry(BaseModel):
@@ -164,24 +222,61 @@ class RiskEntry(BaseModel):
     category: Literal["regulatory", "market", "technology", "team", "financial", "competitive"] = "market"
     content: str
     severity: Literal["low", "medium", "high"] = "medium"
-    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    confidence: float = 0.5
     source_urls: list[str] = []
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _normalize_category(cls, v):
+        return _normalize_literal(
+            v, {"regulatory", "market", "technology", "team", "financial", "competitive"}, "market"
+        )
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def _normalize_severity(cls, v):
+        return _normalize_literal(v, {"low", "medium", "high"}, "medium")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v):
+        return _clamp_unit(v, 0.5)
 
 
 class RedFlag(BaseModel):
     content: str
     severity: Literal["low", "medium", "high"] = "medium"
-    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    confidence: float = 0.5
     source_urls: list[str] = []
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def _normalize_severity(cls, v):
+        return _normalize_literal(v, {"low", "medium", "high"}, "medium")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v):
+        return _clamp_unit(v, 0.5)
 
 
 class InvestmentScore(BaseModel):
-    overall: int = Field(ge=0, le=100, default=0)
-    money: int = Field(ge=0, le=25, default=0)
-    market: int = Field(ge=0, le=25, default=0)
-    momentum: int = Field(ge=0, le=25, default=0)
-    management: int = Field(ge=0, le=25, default=0)
+    overall: int = 0
+    money: int = 0
+    market: int = 0
+    momentum: int = 0
+    management: int = 0
     rationale: str = ""
+
+    @field_validator("money", "market", "momentum", "management", mode="before")
+    @classmethod
+    def _clamp_sub_scores(cls, v):
+        return _clamp_int(v, 0, 25)
+
+    @field_validator("overall", mode="before")
+    @classmethod
+    def _clamp_overall(cls, v):
+        return _clamp_int(v, 0, 100)
 
     @model_validator(mode="after")
     def enforce_overall_sum(self) -> "InvestmentScore":
@@ -242,7 +337,12 @@ class RevenueEstimate(BaseModel):
     range: Optional[str] = None  # "$5M-$10M ARR"
     growth_rate: Optional[str] = None  # "~50% YoY"
     source_url: Optional[str] = None
-    confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    confidence: float = 0.0
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v):
+        return _clamp_unit(v)
 
 
 class EmployeeCountPoint(BaseModel):
@@ -299,19 +399,31 @@ class DeepDiveReport(BaseModel):
 
 class CriticVerification(BaseModel):
     field: str
-    status: Literal["verified", "unverified", "conflicting", "missing"]
+    status: Literal["verified", "unverified", "conflicting", "missing"] = "unverified"
     source_url: Optional[str] = None
     note: Optional[str] = None
 
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status(cls, v):
+        return _normalize_literal(
+            v, {"verified", "unverified", "conflicting", "missing"}, "unverified"
+        )
+
 
 class CriticReport(BaseModel):
-    overall_confidence: float = Field(ge=0.0, le=1.0)
+    overall_confidence: float = 0.0
     section_scores: dict[str, float] = {}
     verifications: list[CriticVerification] = []
     gaps: list[str] = []
     should_retry: bool = False
     retry_queries: list[str] = []
     low_confidence_sections: list[str] = []
+
+    @field_validator("overall_confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v):
+        return _clamp_unit(v)
 
 
 class StatusEvent(BaseModel):
