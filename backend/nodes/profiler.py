@@ -110,6 +110,18 @@ OPERATING STATUS (operating_status):
   One of: "Active", "Acquired", "Closed", "IPO"
   Default to "Active" if no evidence of shutdown, acquisition, or IPO.
 
+TRACTION / USER METRICS:
+- app_store_rating: App Store or Google Play rating as float (e.g. 4.5, 4.8)
+  Look for: "★", "stars", "rating", "4.5/5", "rated 4.8"
+- app_store_reviews: Number of reviews as string (e.g. "12K reviews", "5,000+ reviews")
+  Look for: "reviews", "ratings count"
+- app_downloads: Download count as string (e.g. "1M+", "500K+ downloads", "100K installs")
+  Look for: "downloads", "installs", "downloaded by"
+- user_count: Active user count as string (e.g. "2M MAU", "50K active users", "500K registered")
+  Look for: "users", "MAU", "DAU", "active users", "registered users", "user base"
+- product_hunt_upvotes: Product Hunt upvote count as integer
+  Look for: "Product Hunt", "upvotes", "hunted"
+
 If a field's data is not in the sources, leave it null or empty. For each factual field
 you populate, set the corresponding source_url field to where you found it."""
 

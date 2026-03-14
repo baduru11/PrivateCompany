@@ -95,6 +95,12 @@ class CompanyProfile(BaseModel):
     revenue_estimate: Optional[dict] = None
     employee_count_history: list[dict] = []
     operating_status: Optional[str] = None
+    # Traction / user metrics
+    app_store_rating: Optional[float] = None  # e.g. 4.5
+    app_store_reviews: Optional[str] = None   # e.g. "12K reviews"
+    app_downloads: Optional[str] = None       # e.g. "1M+", "500K+"
+    user_count: Optional[str] = None          # e.g. "2M MAU", "50K users"
+    product_hunt_upvotes: Optional[int] = None
 
     @field_validator("funding_confidence", mode="before")
     @classmethod
@@ -131,6 +137,11 @@ class ExploreCompany(BaseModel):
     description: Optional[str] = None
     confidence: float = 0.0
     source_count: int = 0
+    # Traction metrics
+    app_store_rating: Optional[float] = None
+    app_store_reviews: Optional[str] = None
+    app_downloads: Optional[str] = None
+    user_count: Optional[str] = None
 
     @field_validator("founding_year", mode="before")
     @classmethod

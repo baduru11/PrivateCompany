@@ -56,6 +56,10 @@ INPUT FIELD MAPPING — populate each company with:
 - description: 2-3 sentence company description focused on what makes them relevant to the query
 - confidence: 0.0-1.0 based on the rules above
 - source_count: number of distinct sources used for this company
+- app_store_rating: float rating (e.g. 4.5) from App Store or Google Play. Use null if not found.
+- app_store_reviews: review count as string (e.g. "12K reviews"). Use null if not found.
+- app_downloads: download count as string (e.g. "1M+"). Use null if not found.
+- user_count: user/MAU count as string (e.g. "500K users"). Use null if not found.
 
 CRITICAL SOURCING RULES:
 - Only include information explicitly found in the provided source data.
@@ -527,6 +531,10 @@ def synthesize(state: dict) -> dict:
                     description=p.description or p.core_product,
                     confidence=p.funding_confidence if p.funding_confidence else 0.2,
                     source_count=len(p.raw_sources) if p.raw_sources else 0,
+                    app_store_rating=p.app_store_rating,
+                    app_store_reviews=p.app_store_reviews,
+                    app_downloads=p.app_downloads,
+                    user_count=p.user_count,
                 ))
             fallback_companies = fallback_companies[:20]
             sub_sectors = list({c.sub_sector for c in fallback_companies if c.sub_sector and c.sub_sector != "Unknown"})

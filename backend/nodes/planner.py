@@ -10,7 +10,15 @@ logger = logging.getLogger(__name__)
 EXPLORE_PROMPT = """You are a competitive intelligence research planner.
 Given a sector query, generate a search plan to discover 10-20 companies in this space.
 Output search terms that will find companies, their funding, and key details.
-Include sub-sector categories to organize the landscape."""
+Include sub-sector categories to organize the landscape.
+
+Include search terms that find TRACTION DATA:
+- App store ratings, downloads, and reviews (e.g. "{sector} best apps 2024 2025 ratings downloads")
+- User counts, MAU, DAU, active users (e.g. "{sector} most popular platforms user base")
+- Product Hunt, G2, Trustpilot, Capterra reviews
+- Revenue, ARR, or growth metrics if available
+
+These traction signals help distinguish real products from side projects."""
 
 DEEP_DIVE_PROMPT = """You are a competitive intelligence research planner for investor due diligence.
 Given a company name, generate 14-16 specific search terms to find comprehensive intelligence.
