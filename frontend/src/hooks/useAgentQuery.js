@@ -70,6 +70,7 @@ export function useAgentQuery() {
 
       const contentType = resp.headers.get("content-type") || "";
 
+
       if (contentType.includes("application/json")) {
         const raw = await resp.json();
 
@@ -85,6 +86,7 @@ export function useAgentQuery() {
         }
 
         const normalized = raw.cached && raw.data ? raw.data : raw;
+
         setResult(normalized);
         setIsLoading(false);
         return;
@@ -111,10 +113,12 @@ export function useAgentQuery() {
               } else if (eventType === "status") {
                 setEvents((prev) => [...prev, { ...data, timestamp: data.timestamp || new Date().toISOString() }]);
               } else if (eventType === "complete") {
+
                 setResult(data);
                 setIsLoading(false);
                 receivedComplete = true;
               } else if (eventType === "error") {
+
                 setError(data.error || data.message || "Unknown error");
                 setIsLoading(false);
                 receivedComplete = true;
