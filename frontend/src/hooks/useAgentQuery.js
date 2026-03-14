@@ -95,20 +95,9 @@ export function useAgentQuery() {
       const decoder = new TextDecoder();
       let buffer = "";
       let currentEvent = "";
+      let receivedComplete = false;
 
-      while (true) {
-        if (cancelledRef.current) {
-          reader.cancel();
-          break;
-        }
-
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
+      const processLines = (lines) => {
         for (const line of lines) {
           if (line.startsWith("event:")) {
             currentEvent = line.slice(6).trim();
@@ -124,9 +113,11 @@ export function useAgentQuery() {
               } else if (eventType === "complete") {
                 setResult(data);
                 setIsLoading(false);
+                receivedComplete = true;
               } else if (eventType === "error") {
                 setError(data.error || data.message || "Unknown error");
                 setIsLoading(false);
+                receivedComplete = true;
               }
             } catch {
               // ignore malformed SSE lines
@@ -134,9 +125,32 @@ export function useAgentQuery() {
             currentEvent = "";
           }
         }
+      };
+
+      while (true) {
+        if (cancelledRef.current) {
+          reader.cancel();
+          break;
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        processLines(lines);
       }
 
-      if (!cancelledRef.current) setIsLoading(false);
+      // Process any remaining data left in the buffer
+      if (buffer.trim()) {
+        processLines(buffer.split("\n"));
+      }
+
+      if (!cancelledRef.current && !receivedComplete) {
+        setError("Connection lost — the pipeline did not return a result. Please retry.");
+        setIsLoading(false);
+      }
     } catch (err) {
       if (err.name === "AbortError" || cancelledRef.current) return; // cancelled by user
       setError(err.message);

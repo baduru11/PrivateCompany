@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // Layout
 import TopBar from "./components/layout/TopBar";
@@ -105,15 +105,11 @@ function App() {
   const [selectedQuery, setSelectedQuery] = useState(null);
   const currentStep = useMemo(() => deriveCurrentStep(events), [events]);
 
-  const prevResultRef = useRef(null);
-  if (result && result !== prevResultRef.current) {
-    prevResultRef.current = result;
-    if (queryResult !== result) {
-      setTimeout(() => {
-        setQueryResult(result);
-      }, 0);
+  useEffect(() => {
+    if (result) {
+      setQueryResult(result);
     }
-  }
+  }, [result]);
 
   const handleSubmit = useCallback(
     (query, mode) => {
