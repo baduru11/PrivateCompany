@@ -55,19 +55,8 @@ export default function FundingChart({ fundingRounds = [] }) {
   const chartData = useMemo(() => {
     if (!fundingRounds.length) return [];
 
-    // Deduplicate by amount + stage
-    const deduped = [];
-    const seen = new Set();
-    for (const round of fundingRounds) {
-      const amt = parseAmount(round.amount);
-      const key = `${amt}_${(round.stage || "").toLowerCase().trim()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduped.push(round);
-      }
-    }
-
-    const sorted = [...deduped].sort(
+    // Backend already deduplicates — just sort and compute cumulative
+    const sorted = [...fundingRounds].sort(
       (a, b) => new Date(a.date) - new Date(b.date)
     );
     let cumulative = 0;
@@ -100,47 +89,49 @@ export default function FundingChart({ fundingRounds = [] }) {
 
   return (
     <div className="space-y-6">
-      {/* Chart */}
-      <div className="h-64 w-full rounded-lg bg-[hsl(var(--background))]/50 p-2">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="fundingGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="hsl(217 33% 14%)"
-              vertical={false}
-            />
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 11, fill: "hsl(215 20% 55%)" }}
-              tickLine={false}
-              axisLine={{ stroke: "hsl(217 33% 14%)" }}
-            />
-            <YAxis
-              tickFormatter={formatAmount}
-              tick={{ fontSize: 11, fill: "hsl(215 20% 55%)" }}
-              tickLine={false}
-              axisLine={false}
-              width={60}
-            />
-            <Tooltip content={<ChartTooltip />} />
-            <Area
-              type="monotone"
-              dataKey="cumulative"
-              stroke="#10b981"
-              strokeWidth={2}
-              fill="url(#fundingGradient)"
-              dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }}
-              activeDot={{ r: 6, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Chart — only show when there are 2+ rounds (single point renders nothing visible) */}
+      {chartData.length >= 2 && (
+        <div className="h-64 w-full rounded-lg bg-[hsl(var(--background))]/50 p-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="fundingGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(217 33% 14%)"
+                vertical={false}
+              />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11, fill: "hsl(215 20% 55%)" }}
+                tickLine={false}
+                axisLine={{ stroke: "hsl(217 33% 14%)" }}
+              />
+              <YAxis
+                tickFormatter={formatAmount}
+                tick={{ fontSize: 11, fill: "hsl(215 20% 55%)" }}
+                tickLine={false}
+                axisLine={false}
+                width={60}
+              />
+              <Tooltip content={<ChartTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="cumulative"
+                stroke="#10b981"
+                strokeWidth={2}
+                fill="url(#fundingGradient)"
+                dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }}
+                activeDot={{ r: 6, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Rounds table */}
       <div className="overflow-x-auto rounded-lg border border-[hsl(var(--border))]">
