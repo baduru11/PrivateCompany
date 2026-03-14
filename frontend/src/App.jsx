@@ -236,6 +236,22 @@ function App() {
               <div className="h-full animate-fade-in">
                 <ExploreView data={queryResult} onDeepDive={handleDeepDive} />
               </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center h-full animate-fade-in">
+                <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
+                  <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+                    <span className="text-red-400 text-xl">!</span>
+                  </div>
+                  <p className="text-sm font-medium text-[hsl(var(--foreground))]">Something went wrong</p>
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">{error}</p>
+                  <button
+                    onClick={() => activeQuery && handleSubmit(activeQuery, "explore")}
+                    className="mt-2 px-4 py-2 text-sm rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </div>
             ) : null}
           </div>
         )}
@@ -250,6 +266,22 @@ function App() {
                   data={queryResult}
                   onDownloadPdf={handleDownloadPdf}
                 />
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center h-full animate-fade-in">
+                <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
+                  <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+                    <span className="text-red-400 text-xl">!</span>
+                  </div>
+                  <p className="text-sm font-medium text-[hsl(var(--foreground))]">Something went wrong</p>
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">{error}</p>
+                  <button
+                    onClick={() => activeQuery && handleSubmit(activeQuery, "deep_dive")}
+                    className="mt-2 px-4 py-2 text-sm rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
               </div>
             ) : null}
           </div>
