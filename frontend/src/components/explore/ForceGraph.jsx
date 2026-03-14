@@ -16,13 +16,13 @@ function getSectorColor(subSector, sectorMap) {
 }
 
 function fundingToRadius(funding, maxFunding, fundingLabel) {
-  if (!maxFunding) return 6;
+  if (!maxFunding) return 12;
   if ((!funding || funding === 0) && fundingLabel && /public|ipo/i.test(fundingLabel)) {
-    return 22;
+    return 30;
   }
-  if (!funding || funding === 0) return 6;
+  if (!funding || funding === 0) return 12;
   const normalized = Math.min(funding / maxFunding, 1);
-  return 5 + normalized * 22;
+  return 10 + normalized * 26;
 }
 
 // Parse hex color to r,g,b
@@ -62,13 +62,25 @@ export default function ForceGraph({
     return () => observer.disconnect();
   }, []);
 
+  // Configure forces for tighter clustering
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg) return;
+    // Stronger center gravity to keep graph compact
+    fg.d3Force("center")?.strength(1);
+    // Moderate repulsion — enough to prevent overlap, not too much spread
+    fg.d3Force("charge")?.strength(-120).distanceMax(250);
+    // Shorter link distance to keep connected nodes close
+    fg.d3Force("link")?.distance(60).strength(0.4);
+  }, []);
+
   // Zoom to fit after data loads
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg || companies.length === 0) return;
     const timer = setTimeout(() => {
-      fg.zoomToFit(400, 60);
-    }, 500);
+      fg.zoomToFit(400, 40);
+    }, 600);
     return () => clearTimeout(timer);
   }, [companies]);
 

@@ -362,62 +362,62 @@ export default function ExploreView({ data, onDeepDive }) {
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 relative overflow-hidden">
-        {viewMode === "graph" ? (
-          <>
-            <div
-              className="flex-1 h-full min-h-0 transition-all duration-300"
-              style={{ marginRight: sidebarOpen ? "320px" : "0" }}
-            >
-              <ForceGraph
-                companies={filteredCompanies}
-                onNodeClick={handleNodeClick}
-                selectedNode={selectedCompany?.id || selectedCompany?.name}
-              />
-            </div>
-            <CompanySidebar
-              company={selectedCompany}
-              isOpen={sidebarOpen}
-              onClose={handleCloseSidebar}
-              onDeepDive={handleDeepDive}
+        <div
+          className="flex-1 h-full min-h-0 transition-all duration-300"
+          style={{ marginRight: sidebarOpen ? "320px" : "0" }}
+        >
+          {viewMode === "graph" ? (
+            <ForceGraph
+              companies={filteredCompanies}
+              onNodeClick={handleNodeClick}
+              selectedNode={selectedCompany?.id || selectedCompany?.name}
             />
-          </>
-        ) : (
-          <div className="flex-1 overflow-auto">
-            <table className="w-full">
-              <thead className="sticky top-0 glass-strong border-b border-[hsl(var(--border))] z-10">
-                <tr>
-                  <SortHeader label="Company" sortKey="name" />
-                  <SortHeader label="Sector" sortKey="sub_sector" />
-                  <SortHeader label="Funding" sortKey="funding_numeric" />
-                  <SortHeader label="Stage" sortKey="funding_stage" />
-                  <SortHeader label="Founded" sortKey="founding_year" />
-                  <SortHeader label="Traction" sortKey="app_store_rating" />
-                  <SortHeader label="Confidence" sortKey="confidence" />
-                  <th className="py-3 px-3 w-24"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedCompanies.map((c, i) => (
-                  <CompanyRow
-                    key={c.id}
-                    company={c}
-                    index={i}
-                    onSelect={(company) => {
-                      setSelectedCompany(company);
-                      setSidebarOpen(true);
-                    }}
-                    onDeepDive={handleDeepDive}
-                  />
-                ))}
-              </tbody>
-            </table>
-            {sortedCompanies.length === 0 && (
-              <div className="flex items-center justify-center h-40 text-sm text-[hsl(var(--muted-foreground))]">
-                No companies match the current filters.
-              </div>
-            )}
-          </div>
-        )}
+          ) : (
+            <div className="h-full overflow-auto">
+              <table className="w-full">
+                <thead className="sticky top-0 glass-strong border-b border-[hsl(var(--border))] z-10">
+                  <tr>
+                    <SortHeader label="Company" sortKey="name" />
+                    <SortHeader label="Sector" sortKey="sub_sector" />
+                    <SortHeader label="Funding" sortKey="funding_numeric" />
+                    <SortHeader label="Stage" sortKey="funding_stage" />
+                    <SortHeader label="Founded" sortKey="founding_year" />
+                    <SortHeader label="Traction" sortKey="app_store_rating" />
+                    <SortHeader label="Confidence" sortKey="confidence" />
+                    <th className="py-3 px-3 w-24"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedCompanies.map((c, i) => (
+                    <CompanyRow
+                      key={c.id}
+                      company={c}
+                      index={i}
+                      onSelect={(company) => {
+                        setSelectedCompany(company);
+                        setSidebarOpen(true);
+                      }}
+                      onDeepDive={handleDeepDive}
+                    />
+                  ))}
+                </tbody>
+              </table>
+              {sortedCompanies.length === 0 && (
+                <div className="flex items-center justify-center h-40 text-sm text-[hsl(var(--muted-foreground))]">
+                  No companies match the current filters.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar — shared between graph and table views */}
+        <CompanySidebar
+          company={selectedCompany}
+          isOpen={sidebarOpen}
+          onClose={handleCloseSidebar}
+          onDeepDive={handleDeepDive}
+        />
       </div>
     </div>
   );
