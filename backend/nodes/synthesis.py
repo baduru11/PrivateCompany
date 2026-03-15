@@ -20,6 +20,18 @@ from backend.models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_linkedin_url(url: str | None) -> str | None:
+    """Ensure LinkedIn URLs include 'www.' — LinkedIn requires it.
+
+    Converts ``https://linkedin.com/...`` to ``https://www.linkedin.com/...``.
+    """
+    if not url:
+        return url
+    # Match http(s)://linkedin.com/... (missing www.)
+    return re.sub(r"^(https?://)(?:(?!www\.))(linkedin\.com)", r"\1www.\2", url)
+
+
 EXPLORE_SYSTEM = """You are a competitive intelligence analyst selecting companies from search results.
 
 CRITICAL RULES (MUST follow):
@@ -1761,6 +1773,15 @@ def synthesize(state: dict) -> dict:
         if not cleaned or "data not available" in cleaned or "no data available" in cleaned or "processing error" in cleaned:
             return None
         return _to_section(key)
+
+    # Normalize LinkedIn URLs (LinkedIn requires www.)
+    meta.linkedin_url = _normalize_linkedin_url(meta.linkedin_url)
+    for pe in meta.people_entries:
+        pe.linkedin_url = _normalize_linkedin_url(pe.linkedin_url)
+    for bm in meta.board_members:
+        bm.linkedin_url = _normalize_linkedin_url(bm.linkedin_url)
+    for adv in meta.advisors:
+        adv.linkedin_url = _normalize_linkedin_url(adv.linkedin_url)
 
     report = DeepDiveReport(
         query=state["query"],

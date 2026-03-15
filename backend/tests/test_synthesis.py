@@ -429,3 +429,41 @@ class TestSynthesisErrorHandling:
         assert "report" in result
         assert isinstance(result["report"], ExploreReport)
         assert result["report"].query == "AI chips"
+
+
+class TestNormalizeLinkedinUrl:
+    """Tests for _normalize_linkedin_url helper."""
+
+    def test_adds_www_to_linkedin_url(self):
+        from backend.nodes.synthesis import _normalize_linkedin_url
+
+        assert _normalize_linkedin_url("https://linkedin.com/company/acme") == \
+            "https://www.linkedin.com/company/acme"
+
+    def test_preserves_existing_www(self):
+        from backend.nodes.synthesis import _normalize_linkedin_url
+
+        url = "https://www.linkedin.com/company/acme"
+        assert _normalize_linkedin_url(url) == url
+
+    def test_handles_http(self):
+        from backend.nodes.synthesis import _normalize_linkedin_url
+
+        assert _normalize_linkedin_url("http://linkedin.com/in/johndoe") == \
+            "http://www.linkedin.com/in/johndoe"
+
+    def test_returns_none_for_none(self):
+        from backend.nodes.synthesis import _normalize_linkedin_url
+
+        assert _normalize_linkedin_url(None) is None
+
+    def test_returns_empty_for_empty(self):
+        from backend.nodes.synthesis import _normalize_linkedin_url
+
+        assert _normalize_linkedin_url("") == ""
+
+    def test_does_not_modify_non_linkedin_url(self):
+        from backend.nodes.synthesis import _normalize_linkedin_url
+
+        url = "https://crunchbase.com/org/acme"
+        assert _normalize_linkedin_url(url) == url
