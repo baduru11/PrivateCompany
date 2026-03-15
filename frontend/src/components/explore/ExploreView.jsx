@@ -16,6 +16,8 @@ import CompanySidebar from "./CompanySidebar";
 import FilterChips from "./FilterChips";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { NumberTicker } from "../ui/number-ticker";
+import { BorderBeam } from "../ui/border-beam";
 import { cn } from "../../lib/utils";
 
 function matchesStage(company, stages) {
@@ -89,7 +91,7 @@ function confidenceColor(c) {
 /**
  * Stat card with gradient icon background.
  */
-function StatCard({ icon: Icon, label, value, color = "blue" }) {
+function StatCard({ icon: Icon, label, value, numericValue, prefix = "", suffix = "", decimalPlaces = 0, color = "blue" }) {
   const colorMap = {
     blue: "from-blue-500/15 to-blue-600/5 text-blue-400",
     green: "from-emerald-500/15 to-emerald-600/5 text-emerald-400",
@@ -98,12 +100,22 @@ function StatCard({ icon: Icon, label, value, color = "blue" }) {
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border))] hover-glow transition-all">
+    <div className="relative flex items-center gap-3 px-4 py-3.5 rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border))] hover-glow transition-all overflow-hidden">
       <div className={cn("p-2.5 rounded-lg bg-gradient-to-br", colorMap[color])}>
         <Icon className="w-4 h-4" />
       </div>
       <div className="min-w-0">
-        <p className="text-lg font-bold text-[hsl(var(--foreground))] leading-tight tabular-nums">{value}</p>
+        <p className="text-lg font-bold text-[hsl(var(--foreground))] leading-tight tabular-nums">
+          {numericValue != null ? (
+            <>
+              {prefix}
+              <NumberTicker value={numericValue} decimalPlaces={decimalPlaces} delay={0.2} />
+              {suffix}
+            </>
+          ) : (
+            value
+          )}
+        </p>
         <p className="text-[11px] text-[hsl(var(--muted-foreground))] truncate">{label}</p>
       </div>
     </div>
@@ -343,12 +355,13 @@ export default function ExploreView({ data, onDeepDive }) {
       </div>
 
       {/* Stats + summary panel */}
-      <div className="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]/50">
+      <div className="relative border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]/50 overflow-hidden">
+        <BorderBeam size={80} duration={8} colorFrom="#3b82f6" colorTo="#8b5cf6" borderWidth={1} />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-3.5">
-          <StatCard icon={Building2} label="Companies" value={filteredCompanies.length} color="blue" />
+          <StatCard icon={Building2} label="Companies" numericValue={filteredCompanies.length} color="blue" />
           <StatCard icon={DollarSign} label="Total Funding" value={formatFunding(stats.totalFunding)} color="green" />
-          <StatCard icon={BarChart3} label="Sub-Sectors" value={Object.keys(stats.sectorCounts).length} color="purple" />
-          <StatCard icon={TrendingUp} label="Avg Confidence" value={`${Math.round(stats.avgConfidence * 100)}%`} color="amber" />
+          <StatCard icon={BarChart3} label="Sub-Sectors" numericValue={Object.keys(stats.sectorCounts).length} color="purple" />
+          <StatCard icon={TrendingUp} label="Avg Confidence" numericValue={Math.round(stats.avgConfidence * 100)} suffix="%" color="amber" />
         </div>
 
         {summary && (
