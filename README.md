@@ -44,7 +44,9 @@ CompanyIntel is a full-stack competitive intelligence platform that uses a LangG
 - **Two-phase query validation** — Rule-based heuristics (length, composition, keyboard-mash detection) + LLM semantic check with smart query suggestions before committing API credits
 - **Offline demo mode** — 5 pre-built fixture datasets work instantly with zero API keys
 - **Two-level caching** — API call cache + report cache (7-day TTL) eliminates redundant requests and serves repeat queries instantly
-- **Multi-model LLM architecture** — Three specialized model roles routed through OpenRouter: a prose/reasoning model (DeepSeek v3.2), an extraction model (Gemini 2.5 Flash Lite), and a chat model (DeepSeek Chat) — each configurable independently
+- **Multi-model LLM architecture** — Three specialized model roles routed through OpenRouter: a prose/reasoning model (DeepSeek v3.2), an extraction model (Gemini 3 Flash Preview with `:online` web grounding), and a chat model (Gemini 3 Flash Preview `:online`) — each configurable independently
+- **Real-time web grounding** — The extraction and chat models use OpenRouter's `:online` suffix, enabling the LLM to search Google during every structured extraction call for up-to-date funding, traction, and news data
+- **LangGraph retry loop** — Critic-driven quality gate with up to 2 search iterations for both explore and deep dive modes
 - **Cost estimation** — Every query response includes an estimated USD cost based on model-specific token pricing
 - **PDF export** — Client-side report export via html2pdf.js
 - **Diffbot enrichment** — Optional Diffbot Knowledge Graph integration fills data gaps (headcount, revenue, founding year, operating status)
@@ -66,10 +68,12 @@ Try these queries with no API keys required:
 
 ### Agent Pipeline
 
-Both modes use the same 5-node linear LangGraph pipeline:
+Both modes use the same 5-node LangGraph pipeline with a critic-driven retry loop:
 
 ```
 START → Planner → Searcher → Profiler → Synthesis → Critic → END
+                                                       ↓ (if should_retry && iteration < 2)
+                                                   retry_gate → Planner (with new search terms)
 ```
 
 | Node | Responsibility |
@@ -78,7 +82,7 @@ START → Planner → Searcher → Profiler → Synthesis → Critic → END
 | **Searcher** | Parallel search across Exa (semantic discovery) + Tavily (web search) + Serper (Google search), deduplicated. Async RAG ingest into ChromaDB for chat. |
 | **Profiler** | Explore: extraction model parses company data from snippets. Deep Dive: httpx full-page fetch → Crawl4AI → Jina Reader fallback + optional Diffbot KG enrichment. |
 | **Synthesis** | Explore: produces an `ExploreReport` with companies list, sub-sectors, and summary. Deep Dive: parallel per-section prose generation (13 sections) + structured array extraction (funding rounds, board members, patents, acquisitions, etc.) + Investment Score (4-axis). |
-| **Critic** | Fact-checks claims against raw source snippets, assigns per-section confidence scores (0.0-1.0). Degrades gracefully on failure. |
+| **Critic** | Fact-checks claims against raw source snippets, assigns per-section confidence scores (0.0-1.0). Evaluates quality and triggers retry if data is insufficient (< 8 companies in explore, or 3+ low-confidence sections in deep dive). Degrades gracefully on failure. |
 
 ### Deep Dive Report Sections
 
@@ -113,8 +117,8 @@ Plus structured data arrays: funding rounds, people entries, news items, competi
 ├─────────────────────────────────────────────────────────┤
 │  LLM (via OpenRouter)                                   │
 │  Prose/reasoning: DeepSeek v3.2                         │
-│  Extraction: Gemini 2.5 Flash Lite                      │
-│  Chat: DeepSeek Chat                                    │
+│  Extraction: Gemini 3 Flash Preview :online             │
+│  Chat: Gemini 3 Flash Preview :online                   │
 ├─────────────────────────────────────────────────────────┤
 │  Deploy                                                 │
 │  Frontend → Vercel · Backend → Railway (Docker)         │
@@ -181,8 +185,8 @@ Open [http://localhost:5173](http://localhost:5173) and try any of the demo quer
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | For live queries | — | OpenRouter API key (provides access to DeepSeek, Gemini, GPT-4o, Claude, etc.) |
 | `LLM_MODEL` | No | `deepseek/deepseek-v3.2` | OpenRouter model ID for prose/reasoning (section writing, critic) |
-| `EXTRACTION_MODEL` | No | `google/gemini-2.5-flash-lite` | OpenRouter model ID for structured JSON extraction (planner, profiler, synthesis) |
-| `CHAT_MODEL` | No | `deepseek/deepseek-chat` | OpenRouter model ID for RAG chat |
+| `EXTRACTION_MODEL` | No | `google/gemini-3-flash-preview:online` | OpenRouter model ID for structured JSON extraction with web grounding (planner, profiler, synthesis) |
+| `CHAT_MODEL` | No | `google/gemini-3-flash-preview:online` | OpenRouter model ID for RAG chat with web grounding |
 | `TAVILY_API_KEY` | For live queries | — | Tavily web search API key |
 | `EXA_API_KEY` | For live queries | — | Exa semantic search API key |
 | `SERPER_API_KEY` | For live queries | — | Serper Google search API key |
@@ -343,7 +347,7 @@ pytest tests/test_config.py -v         # Config + structured output tests
 pytest tests/test_validation.py -v     # Query validation tests
 ```
 
-All tests run offline — no external API calls. Fixtures and mocks are used throughout. 15 test files covering cache, config, critic, eval, graph, integration, main, models, planner, profiler, searcher, SSE, synthesis, utils, and validation.
+185 tests pass offline — no external API calls. Fixtures and mocks are used throughout. 15 test files covering cache, config, critic, eval, graph, integration, main, models, planner, profiler, searcher, SSE, synthesis, utils, and validation.
 
 ## API Credit Economics
 
@@ -357,10 +361,9 @@ All tests run offline — no external API calls. Fixtures and mocks are used thr
 | Model | Role | Input ($/1M tokens) | Output ($/1M tokens) |
 |-------|------|---------------------|----------------------|
 | DeepSeek v3.2 | Prose / reasoning | $0.26 | $0.38 |
-| Gemini 2.5 Flash Lite | Extraction | $0.10 | $0.40 |
-| DeepSeek Chat | RAG chat | $0.32 | $0.89 |
+| Gemini 3 Flash Preview :online | Extraction + Chat | $0.15 | $0.60 |
 
-An explore query costs ~$0.005; a deep dive ~$0.05. Caching reduces repeat queries to zero cost. Crawl4AI, Jina Reader, and Diffbot (10K credits/month free tier) are free or very low cost.
+The `:online` web grounding adds ~$0.02 per request (Exa search via OpenRouter). An explore query costs ~$0.30; a deep dive ~$0.50. Caching reduces repeat queries to zero cost.
 
 ## License
 
