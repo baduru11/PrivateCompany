@@ -13,20 +13,21 @@ export function ScopeToggle({ scope, onScopeChange }) {
   }, []);
 
   return (
-    <div className="relative flex rounded-lg bg-white/[0.04] p-0.5">
+    <div className="relative flex rounded-xl bg-white/[0.04] p-1">
+      {/* Animated slider */}
       <div
         className={cn(
-          "absolute inset-y-0.5 rounded-md bg-primary/20 transition-all duration-300 ease-out",
+          "absolute inset-y-1 rounded-lg bg-gradient-to-r from-blue-500/15 to-blue-500/10 border border-blue-500/20 transition-all duration-300 ease-out",
           scope === "current"
-            ? "left-0.5 w-[calc(50%-2px)]"
-            : "left-[50%] w-[calc(50%-2px)]",
+            ? "left-1 w-[calc(50%-4px)]"
+            : "left-[50%] w-[calc(50%-4px)]",
         )}
       />
       <button
         onClick={() => onScopeChange("current")}
         className={cn(
-          "relative z-10 flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-          scope === "current" ? "text-foreground" : "text-muted-foreground",
+          "relative z-10 flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-200 cursor-pointer",
+          scope === "current" ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
         )}
       >
         This report
@@ -34,14 +35,14 @@ export function ScopeToggle({ scope, onScopeChange }) {
       <button
         onClick={() => onScopeChange("all")}
         className={cn(
-          "relative z-10 flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-          scope === "all" ? "text-foreground" : "text-muted-foreground",
+          "relative z-10 flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-200 cursor-pointer",
+          scope === "all" ? "text-blue-400" : "text-muted-foreground hover:text-foreground",
         )}
       >
         All research
         {reportCount > 1 && (
-          <span className="ml-1 text-[10px] text-muted-foreground">
-            ({reportCount})
+          <span className="ml-1 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-blue-400 tabular-nums">
+            {reportCount}
           </span>
         )}
       </button>
