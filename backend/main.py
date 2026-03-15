@@ -14,13 +14,16 @@ warnings.filterwarnings("ignore", message="urllib3.*chardet.*charset_normalizer"
 import asyncio
 import json
 import logging
+import time
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
@@ -147,14 +150,53 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow all origins for development
+# CORS — restrict to known frontends in production, allow all in development
+_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+# Add Vercel deployment URLs from environment
+import os as _os
+_vercel_url = _os.environ.get("FRONTEND_URL")
+if _vercel_url:
+    _ALLOWED_ORIGINS.append(_vercel_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS if _os.environ.get("RAILWAY_ENVIRONMENT") else ["*"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+# ---------------------------------------------------------------------------
+# Rate limiting — simple in-memory token bucket per IP
+# ---------------------------------------------------------------------------
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT = 10          # max requests per window
+_RATE_WINDOW = 60         # window in seconds
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Simple per-IP rate limiter for mutation endpoints."""
+    if request.method in ("GET", "OPTIONS", "HEAD"):
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    # Clean old entries
+    _rate_buckets[client_ip] = [t for t in _rate_buckets[client_ip] if now - t < _RATE_WINDOW]
+    if len(_rate_buckets[client_ip]) >= _RATE_LIMIT:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please wait a moment and try again."},
+        )
+    _rate_buckets[client_ip].append(now)
+    return await call_next(request)
+
 
 # ---------------------------------------------------------------------------
 # Shared instances
