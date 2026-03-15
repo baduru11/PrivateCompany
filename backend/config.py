@@ -32,7 +32,7 @@ class Settings:
         self.llm_provider: str = "openrouter"
         self.llm_model: str = os.getenv("LLM_MODEL", "deepseek/deepseek-v3.2")
         self.chat_model: str = os.getenv("CHAT_MODEL", "deepseek/deepseek-chat")
-        self.extraction_model: str = os.getenv("EXTRACTION_MODEL", "google/gemini-2.5-flash-lite")
+        self.extraction_model: str = os.getenv("EXTRACTION_MODEL", "google/gemini-3-flash-preview")
         self.diffbot_api_key: str = os.getenv("DIFFBOT_API_KEY", "")
         self.cache_dir: str = os.getenv("CACHE_DIR", "cache")
         self.langsmith_tracing: bool = os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true"
