@@ -234,17 +234,16 @@ METADATA:
 - headquarters: string
 - headcount: string (e.g. "~500", "200-300")
 - funding_stage: string
-- linkedin_url: string or null
-- crunchbase_url: string or null
+- linkedin_url: string or null — ONLY include if found in the provided search data. Do NOT guess LinkedIn URLs.
+- crunchbase_url: string or null — ONLY include if found in the provided search data. Do NOT guess.
 - operating_status: "Active" | "Acquired" | "Closed" | "IPO" (default "Active" if unclear)
 - total_funding: string (e.g. "$1.2B", "$50M") — total capital raised across all rounds
 
 STRUCTURED ARRAYS (extract directly from profile data AND raw source snippets):
 - funding_rounds: [{date, stage, amount, investors: [string], lead_investor: string or null, pre_money_valuation: string or null, post_money_valuation: string or null, source_url}]
-  CRITICAL DEDUP: Multiple sources often report the SAME round with slightly different amounts
-  (e.g. $3.4M vs $3.5M vs $3.9M) or with different subsets of investors. These are ONE round.
-  If amounts are within 30% of each other AND the investor lists overlap, it is the SAME round.
-  Output it only ONCE with the most specific date and the most complete investor list.
+  Extract EVERY distinct funding round mentioned. Include Seed, Series A, B, C, D, etc.
+  Each round with a DIFFERENT stage name (Seed, Series A, Series B, etc.) is a SEPARATE round — include all of them.
+  Only deduplicate when the SAME round appears multiple times with slightly different amounts.
   Include lead_investor separately from the investors list. Include valuations if mentioned.
 - people_entries: [{name, title, background, source_url, linkedin_url, prior_exits: [string], domain_expertise_years: int, notable_affiliations: [string]}]
   IMPORTANT: Only include people who WORK AT the target company (founders, executives, employees).
@@ -1643,6 +1642,8 @@ def synthesize(state: dict) -> dict:
         gap_prompt = (
             f"The following structured arrays for {company_name} are incomplete. "
             f"Fill them from your knowledge. Return ONLY the requested arrays.\n\n"
+            f"Include ALL funding rounds — Seed through latest. Do not skip earlier rounds.\n"
+            f"Do NOT fill linkedin_url or crunchbase_url — leave them null.\n\n"
             f"Thin arrays to fill:\n" + "\n".join(f"- {g}" for g in gaps)
         )
         try:
