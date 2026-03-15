@@ -134,7 +134,8 @@ FORMAT RULES (apply to every section):
 - INLINE CITATIONS: For every factual claim, add an inline citation marker like [1], [2], etc.
   referring to the source URL where you found the information. These markers must correspond to
   entries in the citations array extracted separately.
-- CRITICAL: Only use information from the provided data. Never guess or infer."""
+- Use the provided data as your primary source, but supplement with well-known facts from your
+  knowledge when the data is incomplete. The critic node will verify claims later."""
 
 # Per-section prompts for parallel synthesis
 _SECTION_PROMPTS = {
@@ -257,7 +258,18 @@ STRUCTURED ARRAYS (extract directly from profile data AND raw source snippets):
 - employee_count_history: [{date: string, count: int, source: string}]
 - citations: [{id: int, url: string, snippet: string}]
 
-CRITICAL: Only include information from the provided data. Never guess.
+CRITICAL: Build the MOST COMPLETE picture possible. Use BOTH the provided data AND your knowledge.
+
+The search data is often incomplete. You MUST supplement with facts from your training data:
+- funding_rounds: Include ALL known rounds (Seed, Series A, B, C, D, etc.) — not just the latest
+- people_entries: Include ALL known executives, not just those in search results
+- competitor_entries: Include ALL major competitors (aim for 5-8), with their funding if known
+- news_items: Include 5+ recent news items from your knowledge if search results are sparse
+- board_members: Include investor board seats if known (e.g., a16z partner on the board)
+- partnerships: Include known integrations, strategic partnerships
+- citations: Include source URLs from the search results for every factual claim
+
+It's FAR better to include well-known facts than leave arrays empty.
 Deduplicate all arrays — same person, same funding round, same news item should appear only once."""
 
 
@@ -1600,6 +1612,64 @@ def synthesize(state: dict) -> dict:
         removed = before - len(meta.people_entries)
         if removed:
             logger.info("Filtered %d people without valid titles", removed)
+
+    # 1d. Gap-fill: if structured arrays are thin, do a targeted LLM call to supplement
+    gaps = []
+    if len(meta.funding_rounds) < 2:
+        gaps.append("funding_rounds (include ALL known rounds: Seed, Series A, B, C, D etc.)")
+    if len(meta.competitor_entries) < 5:
+        gaps.append("competitor_entries (include 5-8 major competitors with funding amounts)")
+    if len(meta.news_items) < 3:
+        gaps.append("news_items (include 5+ recent news items)")
+    if len(meta.board_members) < 1:
+        gaps.append("board_members (include investor board seats if known)")
+    if len(meta.citations) < 5:
+        gaps.append("citations (include source URLs for factual claims)")
+
+    if gaps:
+        logger.info("Gap-filling %d thin arrays for %s: %s", len(gaps), company_name, [g.split(" (")[0] for g in gaps])
+        gap_prompt = (
+            f"The following structured arrays for {company_name} are incomplete. "
+            f"Fill them from your knowledge. Return ONLY the requested arrays.\n\n"
+            f"Thin arrays to fill:\n" + "\n".join(f"- {g}" for g in gaps)
+        )
+        try:
+            gap_fill = invoke_structured(llm_extraction, MetadataAndArrays, [
+                SystemMessage(content=gap_prompt),
+                HumanMessage(content=f"Company: {company_name}\n\nExisting data:\n{profiles_text[:3000]}")
+            ])
+            # Merge gap-filled data (only add, never overwrite)
+            if len(meta.funding_rounds) < 2 and gap_fill.funding_rounds:
+                existing_stages = {(r.stage or "").lower() for r in meta.funding_rounds}
+                for r in gap_fill.funding_rounds:
+                    if (r.stage or "").lower() not in existing_stages:
+                        meta.funding_rounds.append(r)
+                meta.funding_rounds = deduplicate_funding_rounds(meta.funding_rounds)
+            if len(meta.competitor_entries) < 5 and gap_fill.competitor_entries:
+                existing_names = {c.name.lower() for c in meta.competitor_entries}
+                for c in gap_fill.competitor_entries:
+                    if c.name.lower() not in existing_names:
+                        meta.competitor_entries.append(c)
+            if len(meta.news_items) < 3 and gap_fill.news_items:
+                existing_titles = {n.title.lower() for n in meta.news_items}
+                for n in gap_fill.news_items:
+                    if n.title.lower() not in existing_titles:
+                        meta.news_items.append(n)
+                meta.news_items.sort(key=lambda n: n.date or "0000-00-00", reverse=True)
+            if len(meta.board_members) < 1 and gap_fill.board_members:
+                meta.board_members = gap_fill.board_members
+            if len(meta.citations) < 5 and gap_fill.citations:
+                existing_urls = {c.url for c in meta.citations}
+                for c in gap_fill.citations:
+                    if c.url not in existing_urls:
+                        meta.citations.append(c)
+                for i, cit in enumerate(meta.citations, 1):
+                    cit.id = i
+            logger.info("Gap-fill complete: rounds=%d, competitors=%d, news=%d, board=%d, citations=%d",
+                        len(meta.funding_rounds), len(meta.competitor_entries),
+                        len(meta.news_items), len(meta.board_members), len(meta.citations))
+        except Exception as exc:
+            logger.warning("Gap-fill failed: %s", exc)
 
     # 2. Generate logo URL from company website
     logo_url = None

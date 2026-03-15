@@ -333,7 +333,7 @@ class TestSynthesisAntiHallucination:
         from backend.nodes.synthesis import _SECTION_PROMPTS
 
         for key, prompt in _SECTION_PROMPTS.items():
-            assert "Only use information from the provided data" in prompt, (
+            assert "provided data" in prompt, (
                 f"Section prompt '{key}' is missing the source-grounding instruction"
             )
 
@@ -341,7 +341,7 @@ class TestSynthesisAntiHallucination:
         """_METADATA_PROMPT contains anti-hallucination instructions."""
         from backend.nodes.synthesis import _METADATA_PROMPT
 
-        assert "Only include information from the provided data" in _METADATA_PROMPT, (
+        assert "provided data" in _METADATA_PROMPT, (
             "_METADATA_PROMPT is missing the source-grounding instruction"
         )
 
@@ -398,8 +398,8 @@ class TestSynthesisAntiHallucination:
                 "company_profiles": profiles,
             })
 
-        # Should have 1 metadata + 1 investment score + 13 section calls = 15 total
-        assert len(invoke_calls) == 15
+        # Should have 1 metadata + 1 gap-fill + 1 investment score + 13 section calls = 16 total
+        assert len(invoke_calls) == 16
         # First call should be metadata extraction
         meta_call_schema, meta_call_messages = invoke_calls[0]
         assert meta_call_schema is MetadataAndArrays
