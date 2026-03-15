@@ -1,10 +1,11 @@
 import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
+import { forceCollide } from "d3-force-3d";
 
-// Muted, slightly desaturated palette (Obsidian-style)
+// Rich, vibrant palette — distinct and professional
 const SUB_SECTOR_COLORS = [
-  "#6B93D6", "#5EAD8A", "#D4915E", "#A76BBF", "#5EB8D4",
-  "#CF6B6B", "#D4B85E", "#4A9E6B", "#8B5EC2", "#4A8EBF",
+  "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#06B6D4",
+  "#EF4444", "#EC4899", "#14B8A6", "#6366F1", "#F97316",
 ];
 
 function getSectorColor(subSector, sectorMap) {
@@ -16,13 +17,13 @@ function getSectorColor(subSector, sectorMap) {
 }
 
 function fundingToRadius(funding, maxFunding, fundingLabel) {
-  if (!maxFunding) return 12;
+  if (!maxFunding) return 16;
   if ((!funding || funding === 0) && fundingLabel && /public|ipo/i.test(fundingLabel)) {
-    return 30;
+    return 32;
   }
-  if (!funding || funding === 0) return 12;
+  if (!funding || funding === 0) return 16;
   const normalized = Math.min(funding / maxFunding, 1);
-  return 10 + normalized * 26;
+  return 14 + normalized * 24;
 }
 
 // Parse hex color to r,g,b
@@ -62,31 +63,28 @@ export default function ForceGraph({
     return () => observer.disconnect();
   }, []);
 
-  // Configure forces for tighter clustering
+  // Configure forces — tight but no overlap
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg) return;
-    // Stronger center gravity to keep graph compact
-    fg.d3Force("center")?.strength(1);
-    // Moderate repulsion — enough to prevent overlap, not too much spread
-    fg.d3Force("charge")?.strength(-120).distanceMax(250);
-    // Shorter link distance to keep connected nodes close
-    fg.d3Force("link")?.distance(60).strength(0.4);
+    fg.d3Force("center")?.strength(1.5);
+    fg.d3Force("charge")?.strength(-80).distanceMax(180);
+    fg.d3Force("link")?.distance(40).strength(0.7);
+    // Collision force prevents node overlap — radius + padding for labels
+    fg.d3Force("collide", forceCollide((node) => (node.radius || 16) + 10).strength(0.9).iterations(3));
+    fg.d3ReheatSimulation?.();
   }, []);
 
-  // Zoom to fit after simulation settles — only once
+  // Zoom to fit once after simulation settles
   const hasZoomed = useRef(false);
-  useEffect(() => {
-    hasZoomed.current = false;
-  }, [companies]);
-
+  useEffect(() => { hasZoomed.current = false; }, [companies]);
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg || companies.length === 0 || hasZoomed.current) return;
     const timer = setTimeout(() => {
-      fg.zoomToFit(400, 80);
+      fg.zoomToFit(400, 30);
       hasZoomed.current = true;
-    }, 800);
+    }, 1000);
     return () => clearTimeout(timer);
   }, [companies]);
 
@@ -174,11 +172,12 @@ export default function ForceGraph({
 
       const { r: cr, g: cg, b: cb } = hexToRgb(node.color);
 
-      // Subtle outer glow for all nodes
+      // Ambient glow — layered for depth
       ctx.beginPath();
-      ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI);
-      const glowGrad = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 4);
-      glowGrad.addColorStop(0, `rgba(${cr},${cg},${cb},0.15)`);
+      ctx.arc(node.x, node.y, r + 6, 0, 2 * Math.PI);
+      const glowGrad = ctx.createRadialGradient(node.x, node.y, r * 0.5, node.x, node.y, r + 6);
+      glowGrad.addColorStop(0, `rgba(${cr},${cg},${cb},0.2)`);
+      glowGrad.addColorStop(0.7, `rgba(${cr},${cg},${cb},0.06)`);
       glowGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
       ctx.fillStyle = glowGrad;
       ctx.fill();
@@ -186,47 +185,45 @@ export default function ForceGraph({
       // Stronger glow for hovered/selected
       if (isSelected || isHovered) {
         ctx.beginPath();
-        ctx.arc(node.x, node.y, r + 10, 0, 2 * Math.PI);
-        const hoverGrad = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 10);
-        hoverGrad.addColorStop(0, `rgba(${cr},${cg},${cb},0.35)`);
+        ctx.arc(node.x, node.y, r + 14, 0, 2 * Math.PI);
+        const hoverGrad = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, r + 14);
+        hoverGrad.addColorStop(0, `rgba(${cr},${cg},${cb},0.45)`);
+        hoverGrad.addColorStop(0.5, `rgba(${cr},${cg},${cb},0.12)`);
         hoverGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
         ctx.fillStyle = hoverGrad;
         ctx.fill();
       }
 
-      // Main circle
+      // Main circle with gradient fill
       ctx.beginPath();
       ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.85)`;
+      const nodeGrad = ctx.createRadialGradient(node.x - r * 0.3, node.y - r * 0.3, 0, node.x, node.y, r);
+      nodeGrad.addColorStop(0, `rgba(${Math.min(cr + 40, 255)},${Math.min(cg + 40, 255)},${Math.min(cb + 40, 255)},0.95)`);
+      nodeGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0.8)`);
+      ctx.fillStyle = nodeGrad;
       ctx.fill();
 
-      // Border ring
+      // Border ring — crisp
       ctx.strokeStyle = isSelected
         ? `rgba(255,255,255,0.9)`
-        : `rgba(${cr},${cg},${cb},0.4)`;
-      ctx.lineWidth = isSelected ? 2 : 0.8;
+        : isHovered
+          ? `rgba(255,255,255,0.5)`
+          : `rgba(${cr},${cg},${cb},0.5)`;
+      ctx.lineWidth = isSelected ? 2.5 : isHovered ? 1.5 : 1;
       ctx.stroke();
 
-      // Initial letter (always visible inside node)
+      // Initial letter inside node
       ctx.fillStyle = `rgba(255,255,255,${nodeAlpha * 0.9})`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = `bold ${Math.max(r * 0.65, 8)}px -apple-system, system-ui, sans-serif`;
+      ctx.font = `bold ${Math.max(r * 0.7, 10)}px -apple-system, system-ui, sans-serif`;
       ctx.fillText(node.initial, node.x, node.y);
 
-      // Label below node — zoom-based fading (Obsidian-style LOD)
-      const zoom = globalScale || 1;
-      const labelAlpha = zoom > 1.5 ? 1.0
-        : zoom > 0.8 ? (zoom - 0.8) / 0.7
-        : 0;
-      // Always show label for hovered/selected nodes regardless of zoom
-      const showLabel = labelAlpha > 0.01 || isHovered || isSelected;
-      if (showLabel) {
-        const finalLabelAlpha = (isHovered || isSelected) ? 0.9 : labelAlpha * 0.6;
-        ctx.fillStyle = `rgba(255,255,255,${finalLabelAlpha * nodeAlpha})`;
-        ctx.font = `${Math.max(Math.min(r * 0.45, 10), 7)}px -apple-system, system-ui, sans-serif`;
-        ctx.fillText(node.name, node.x, node.y + r + 8);
-      }
+      // Company name label — always visible
+      const labelOpacity = (isHovered || isSelected) ? 0.95 : 0.7;
+      ctx.fillStyle = `rgba(255,255,255,${labelOpacity * nodeAlpha})`;
+      ctx.font = `${Math.max(r * 0.55, 10)}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText(node.name, node.x, node.y + r + 10);
 
       ctx.globalAlpha = 1.0;
     },
@@ -245,22 +242,28 @@ export default function ForceGraph({
 
       let alpha, width;
       if (!hoveredNode) {
-        // Default: subtle visible links
-        alpha = 0.08;
-        width = 0.5;
+        alpha = 0.06;
+        width = 0.6;
       } else if (hoveredNode.id === sid || hoveredNode.id === tid) {
-        // Connected to hovered node: highlight
-        alpha = 0.35;
-        width = 1.2;
+        alpha = 0.4;
+        width = 1.5;
       } else {
-        // Not connected: very dim
-        alpha = 0.02;
+        alpha = 0.015;
         width = 0.3;
       }
 
+      // Curved links for visual appeal
+      const midX = (source.x + target.x) / 2;
+      const midY = (source.y + target.y) / 2;
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const curvature = 0.1;
+      const cpX = midX - dy * curvature;
+      const cpY = midY + dx * curvature;
+
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
-      ctx.lineTo(target.x, target.y);
+      ctx.quadraticCurveTo(cpX, cpY, target.x, target.y);
       ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
       ctx.lineWidth = width;
       ctx.stroke();

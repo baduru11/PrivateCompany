@@ -54,6 +54,31 @@ function formatFunding(num) {
   return `$${num}`;
 }
 
+function formatTraction(company) {
+  if (company.app_store_rating != null) {
+    return (
+      <span className="flex items-center gap-1">
+        <span className="text-amber-400">★</span>
+        <span>{company.app_store_rating}</span>
+        {company.app_store_reviews && <span className="text-xs opacity-60">({company.app_store_reviews})</span>}
+      </span>
+    );
+  }
+  if (company.user_count) {
+    // Format large numbers: "1960000 users" → "1.96M users"
+    const match = company.user_count.match(/^(\d[\d,]*)\s*(.*)/);
+    if (match) {
+      const num = parseInt(match[1].replace(/,/g, ""), 10);
+      const suffix = match[2] || "";
+      if (num >= 1e6) return `${(num / 1e6).toFixed(1)}M ${suffix}`.trim();
+      if (num >= 1e3) return `${(num / 1e3).toFixed(0)}K ${suffix}`.trim();
+    }
+    return company.user_count;
+  }
+  if (company.app_downloads) return company.app_downloads;
+  return "\u2014";
+}
+
 function confidenceColor(c) {
   if (c == null) return "text-zinc-500";
   if (c >= 0.7) return "text-emerald-400";
@@ -135,17 +160,7 @@ function CompanyRow({ company, index, onSelect, onDeepDive }) {
         {company.founding_year || "\u2014"}
       </td>
       <td className="py-3.5 px-3 text-sm text-[hsl(var(--muted-foreground))]">
-        {company.app_store_rating != null ? (
-          <span className="flex items-center gap-1">
-            <span className="text-amber-400">★</span>
-            <span>{company.app_store_rating}</span>
-            {company.app_store_reviews && <span className="text-xs opacity-60">({company.app_store_reviews})</span>}
-          </span>
-        ) : company.app_downloads ? (
-          <span>{company.app_downloads}</span>
-        ) : company.user_count ? (
-          <span>{company.user_count}</span>
-        ) : "\u2014"}
+        {formatTraction(company)}
       </td>
       <td className="py-3.5 px-3">
         <div className={cn("text-xs font-mono tabular-nums", confidenceColor(company.confidence))}>
@@ -202,6 +217,7 @@ export default function ExploreView({ data, onDeepDive }) {
       app_store_reviews: c.app_store_reviews || "",
       app_downloads: c.app_downloads || "",
       user_count: c.user_count || "",
+      source_urls: c.source_urls || [],
     }));
   }, [data]);
 

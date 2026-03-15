@@ -51,14 +51,14 @@ export default function CompanySidebar({
       {/* Backdrop — click to close */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black/20"
+          className="fixed inset-0 z-40 bg-black/20"
           onClick={onClose}
         />
       )}
 
       <div
         className={cn(
-          "absolute top-0 right-0 h-full w-80 z-30",
+          "fixed top-0 right-0 h-full w-80 z-[60]",
           "glass-strong border-l border-[hsl(var(--border))]",
           "shadow-2xl shadow-black/30",
           "transition-transform duration-300 ease-in-out",
@@ -137,6 +137,33 @@ export default function CompanySidebar({
               {detail(Download, "Adoption", company.app_downloads)}
               {detail(UserCheck, "Users / Customers", company.user_count)}
             </div>
+
+            {/* Sources */}
+            {company.source_urls?.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[hsl(var(--muted-foreground))]/70 mb-1.5">
+                  Sources ({company.source_urls.length})
+                </p>
+                <div className="space-y-1">
+                  {company.source_urls.slice(0, 5).map((url, i) => (
+                    <a
+                      key={i}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-[11px] text-blue-400/70 hover:text-blue-300 truncate transition-colors"
+                    >
+                      {url.replace(/^https?:\/\//, "").split("/")[0]}
+                    </a>
+                  ))}
+                  {company.source_urls.length > 5 && (
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))]/50">
+                      +{company.source_urls.length - 5} more
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Deep Dive button */}
             <Button
