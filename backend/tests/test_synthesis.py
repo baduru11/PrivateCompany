@@ -308,11 +308,11 @@ class TestSynthesisAntiHallucination:
         """EXPLORE_SYSTEM prompt contains anti-hallucination instructions."""
         from backend.nodes.synthesis import EXPLORE_SYSTEM
 
-        assert "Only include information from the provided data" in EXPLORE_SYSTEM, (
-            "EXPLORE_SYSTEM is missing the source-grounding instruction"
+        assert "ONLY use company names from the AVAILABLE COMPANIES list" in EXPLORE_SYSTEM, (
+            "EXPLORE_SYSTEM is missing the available-companies-only instruction"
         )
-        assert "Data not available" in EXPLORE_SYSTEM, (
-            "EXPLORE_SYSTEM is missing the 'Data not available' fallback instruction"
+        assert "Do NOT invent" in EXPLORE_SYSTEM, (
+            "EXPLORE_SYSTEM is missing the anti-hallucination instruction"
         )
 
     def test_synthesis_section_prompts_have_grounding_instructions(self):

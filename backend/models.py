@@ -137,6 +137,7 @@ class ExploreCompany(BaseModel):
     description: Optional[str] = None
     confidence: float = 0.0
     source_count: int = 0
+    source_urls: list[str] = []
     # Traction metrics
     app_store_rating: Optional[float] = None
     app_store_reviews: Optional[str] = None

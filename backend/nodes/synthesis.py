@@ -5,6 +5,7 @@ import re
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import httpx
 from backend.utils import deduplicate_funding_rounds
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -19,65 +20,71 @@ from backend.models import (
 
 logger = logging.getLogger(__name__)
 
-EXPLORE_SYSTEM = """You are a competitive intelligence analyst. Given company profiles,
-create a structured competitive landscape report.
+EXPLORE_SYSTEM = """You are a competitive intelligence analyst selecting companies from search results.
 
-STRICT RULES:
-1. RELEVANCE: Only include companies whose PRIMARY business is directly in the queried sector.
-   - Exclude general-purpose AI assistants (Copilot, ChatGPT, Gemini, etc.) — they can do
-     anything but are NOT specialized companies in this sector.
-   - Exclude tech giants (Microsoft, Google, Amazon, Apple, Samsung) unless they have a
-     DEDICATED standalone product/brand specifically in this space.
-   - Exclude YouTube videos, blog posts, listicles, or non-companies.
-   - Exclude tiny hobby projects, personal tools, or single-developer side projects with
-     no evidence of being a real business (no team, no funding, no product traction).
-   - If a company was acquired, use the CURRENT name/brand, not the old one.
-2. QUALITY: Prioritize by business maturity. List the most significant first:
-   - Tier 1: Funded startups or established companies with teams, investors, press coverage
-   - Tier 2: Apps/products with real users, reviews, or meaningful traction (app store presence,
-     user testimonials, active community) — these are valid even without traditional funding
-   - Exclude: Hobby projects, demo apps, or tools with no evidence of real usage
-3. DEDUPLICATION: Never include the same company twice. If a company appears multiple times
-   in the source data, merge the information into a single entry.
-4. LIMIT: Include at most 20 companies. Quality over quantity — 10 well-documented companies
-   is better than 20 sparse ones.
-5. CONFIDENCE: Set confidence based on actual data quality:
-   - 0.8-1.0: Multiple sources confirm key facts (funding, founding year, etc.)
-   - 0.5-0.7: Some data available but gaps exist
-   - 0.2-0.4: Very sparse data, mostly just a name and description
+COMPANY SELECTION RULES:
+1. PREFER companies from the AVAILABLE COMPANIES list — copy names character-for-character.
+2. If the list has fewer than 12 relevant companies, you MAY add well-known companies
+   from your knowledge that are clearly in this sector but missing from the search results.
+   For added companies, use their official name and fill in all fields you know.
+3. Target 12-15 companies total. Quality matters more than hitting the target.
 
-INPUT FIELD MAPPING — populate each company with:
-- name: company name (official name, not a product feature description)
-- sub_sector: specific technology/market niche within the queried sector
-- website: company website URL (e.g. "https://dishgen.com"). Extract from source data.
-- funding_total: string like "$720M", "Public (IPO 1999)". Use null if unknown.
-- funding_numeric: number in millions (0 if unknown or public)
-- funding_stage: e.g. "Seed", "Series A", "Series B", "Series C+", "IPO / Public". Use null if unknown.
-- founding_year: integer year. Use null if unknown (do NOT write "Data not available").
-- headquarters: city, state/country. Use null if unknown.
-- key_investors: list of investor names. Use empty list [] if unknown.
-- description: 2-3 sentence company description focused on what makes them relevant to the query
-- confidence: 0.0-1.0 based on the rules above
-- source_count: number of distinct sources used for this company
-- app_store_rating: float rating from any review platform (App Store, G2, Capterra, etc.). null if not found.
-- app_store_reviews: review count string (e.g. "12K reviews", "2.5K on G2"). null if not found.
-- app_downloads: adoption volume string — adapt to sector (downloads, units shipped, deployments, GMV). null if not found.
-- user_count: user/customer count string (e.g. "500K users", "2K enterprise customers", "50K developers"). null if not found.
+SELECTION CRITERIA — for each company in the list, ask TWO questions:
+1. "Is this an actual company/startup (not a category, article, or generic term)?"
+2. "Does this company's CORE product directly serve the queried sector?"
+Both must be YES. If either is NO or UNCLEAR → exclude it.
 
-CRITICAL SOURCING RULES:
-- Only include information explicitly found in the provided source data.
-- Do NOT use your pretrained knowledge to fill in company details. If a fact is not in the
-  sources, use null. Every data point must come from the provided text.
-- Do NOT write string values like "Data not available" — use null instead.
-- Do NOT invent or guess website URLs, funding amounts, or founding years.
+RELEVANCE TEST — be strict about relevance:
+- A company that merely USES AI coding tools is NOT an AI coding assistant company
+- A GPU manufacturer (Nvidia, AMD) is NOT an AI coding assistant company
+- A general consulting/outsourcing company (Aloa, Accenture) is NOT in the sector
+- A company must BUILD/SELL a product in the sector, not just be tangentially related
 
-CITATIONS: For every factual claim, include an inline citation marker like [1], [2], etc.
-Populate the 'citations' array with corresponding entries: {id, url, snippet}.
-The snippet should be the exact text from the source that supports the claim."""
+STRICTLY EXCLUDE even if in the list:
+- Generic category terms that are NOT real companies (e.g. "AI Code Assistants", "Best Coding Tools 2024", "Top AI Startups")
+- Articles, listicles, blogs, review sites, publications, newsletters (e.g. Stackademic, G2, TechCrunch, Gartner)
+- VCs, accelerators, investment firms, consulting firms
+- General-purpose AI tools (ChatGPT, Gemini, Claude) unless they have a DEDICATED product in the sector
+- Big tech parent companies (Microsoft, Google, Amazon, Apple, Samsung) — but their standalone dedicated products/subsidiaries ARE allowed
+- Hobby projects or tools with no evidence of real users, funding, or team
+- Duplicates — if "JetBrains AI" and "JetBrains AI Assistant" both appear, keep only one (the shorter canonical name)
+- If a name looks like a generic keyword phrase rather than a company name, EXCLUDE it
+
+RANK by: funded companies first (most funding → top), then most traction data, then others.
+TARGET: Select 12-15 companies. If you have fewer than 10 good candidates, include all of them.
+Do NOT pad the list with irrelevant entries to hit the target — quality over quantity.
+
+For each selected company, populate AS MANY FIELDS AS POSSIBLE:
+- name: copy EXACTLY from the AVAILABLE COMPANIES list (character-for-character)
+- sub_sector: specific niche within the sector — use CONSISTENT singular naming
+- description: 2-3 sentences about what the company does
+- funding_total: total funding raised (e.g. "$252M", "$3.4B") — use data from sources OR your knowledge
+- funding_stage: latest known stage (e.g. "Series D", "Series B")
+- founding_year: year founded (integer, e.g. 2022)
+- headquarters: city and state/country (e.g. "San Francisco, CA")
+- key_investors: list of major investors (e.g. ["Sequoia Capital", "a16z"])
+- website: company website URL if known
+
+IMPORTANT: Fill in funding, founding year, headquarters, and key investors from your knowledge
+if the source data doesn't contain them. It's better to provide known data than leave fields empty.
+The critic node will verify claims later.
+
+SUB-SECTOR RULES:
+- Use singular form consistently (e.g. "AI Coding Assistant" not "AI Coding Assistants")
+- Aim for 3-6 distinct sub-sectors — group similar companies together
+
+Also provide:
+- sector: short name for the overall sector
+- sub_sectors: list of sub-sector categories you used (singular form, 3-6 categories)
+- summary: 2-3 sentence landscape overview with total market funding mentioned if known"""
 
 
 def _parse_funding_numeric(funding_str: str | None) -> float:
-    """Extract a numeric funding value (in millions) from a string like '$720M'."""
+    """Extract a numeric funding value (in actual USD) from a string like '$720M'.
+
+    Returns the value in actual dollars so the frontend can format it directly
+    (e.g. '$720M' → 720_000_000, '$1.5B' → 1_500_000_000).
+    """
     if not funding_str:
         return 0.0
     m = re.search(r'\$\s*([\d.]+)\s*([BMK])?', funding_str, re.IGNORECASE)
@@ -86,9 +93,11 @@ def _parse_funding_numeric(funding_str: str | None) -> float:
     val = float(m.group(1))
     unit = (m.group(2) or '').upper()
     if unit == 'B':
-        val *= 1000
+        val *= 1_000_000_000
+    elif unit == 'M':
+        val *= 1_000_000
     elif unit == 'K':
-        val /= 1000
+        val *= 1_000
     return val
 
 
@@ -482,6 +491,797 @@ def _generate_section(section_key: str, profiles_text: str, raw_snippets: str, c
         return section_key, SectionProse(content="Data not available due to processing error.", confidence=0.0)
 
 
+_SKIP_DOMAINS = (
+    "google.", "bing.", "youtube.", "twitter.", "linkedin.", "crunchbase.",
+    "techcrunch.", "forbes.", "bloomberg.", "reddit.", "wikipedia.",
+    "apps.apple.com", "sensortower.", "appannie.", "similarweb.",
+    "g2.com", "capterra.", "trustpilot.", "appfigures.",
+    "medium.com", "gartner.", "startus-insights.", "ventureradar.",
+    "datacamp.", "brightseotools.", "strategydriven.", "spacelift.",
+    "ycombinator.", "producthunt.", "pitchbook.", "tracxn.",
+    "stackshare.", "alternativeto.", "slant.co", "saasworthy.",
+    "sourceforge.", "stackademic.", "towardsdatascience.",
+    "hackernoon.", "dev.to", "substack.", "beehiiv.",
+    "marketplace.visualstudio.", "chrome.google.",
+    # VC / investor sites
+    "sequoiacap.", "a16z.", "accel.", "indexventures.", "andreessen",
+    "kpcb.", "greylock.", "benchmark.", "lightspeed.", "thrive.",
+    # Article / review aggregators
+    "aitoolsbusiness.", "aitools.", "futurepedia.", "theresanaiforthat.",
+    "toolify.", "topai.", "aixploria.", "aicollection.",
+    "clickup.", "zapier.", "notion.", "hubspot.",
+)
+
+
+def _is_non_company(name: str, website: str | None) -> bool:
+    """Check if an entry is likely NOT a real company (generic term, article site, etc.)."""
+    name_lower = name.lower().strip()
+
+    # Generic terms that are not companies
+    generic_terms = {
+        "ai agents", "ai coding assistants", "ai code assistants",
+        "ai coding assistant", "ai code assistant",
+        "ai tools", "best ai tools", "top ai startups", "coding tools",
+        "ai solutions", "ai code", "code generation", "ai development",
+        "ai startups", "ai companies", "ai software", "ai platform",
+        "ai assistant", "ai assistants", "code assistant", "code assistants",
+        "copilot",  # generic term (GitHub Copilot should be listed as "GitHub Copilot")
+    }
+    if name_lower in generic_terms:
+        return True
+
+    # Names that look like article titles (contain too many words)
+    if len(name_lower.split()) > 4:
+        return True
+
+    # Names that are just generic phrases starting with common prefixes
+    generic_prefixes = ("best ", "top ", "list of ", "how to ", "what is ")
+    if any(name_lower.startswith(p) for p in generic_prefixes):
+        return True
+
+    # Website is a known non-company domain
+    if website:
+        for skip in _SKIP_DOMAINS:
+            if skip in website.lower():
+                return True
+
+    return False
+
+
+def _extract_from_snippets(company: ExploreCompany, signals: list) -> ExploreCompany:
+    """Extract data from raw search snippets that the profiler may have missed."""
+    company_name_lower = company.name.lower().replace(" ", "")
+
+    # First pass: find the company's own website (prefer URLs whose domain contains the company name)
+    candidate_websites: list[str] = []
+    for sig in signals:
+        url = sig.url or ""
+        if not url:
+            continue
+        parts = url.split("/")
+        domain = parts[2] if len(parts) > 2 else ""
+        if not domain or any(sk in domain for sk in _SKIP_DOMAINS):
+            continue
+        # Check if the domain looks like it belongs to this company
+        domain_clean = domain.lower().replace("www.", "").replace("-", "").replace(".", "")
+        # Strong match: company name (stripped) appears in domain
+        name_parts = company_name_lower.replace(".", "").replace(" ", "")
+        # Try several matching strategies
+        domain_base = domain_clean.split("com")[0].split("io")[0].split("ai")[0].split("app")[0].split("co")[0]
+        if (name_parts in domain_clean
+            or domain_base and len(domain_base) > 2 and domain_base in name_parts
+            or name_parts and len(name_parts) > 2 and name_parts in domain_base):
+            if not company.website:
+                company.website = f"https://{domain}"
+            break
+        candidate_websites.append(f"https://{domain}")
+
+    # Also try to extract website URLs mentioned in snippet text
+    if not company.website:
+        for sig in signals:
+            text = sig.snippet or ""
+            url_m = re.search(
+                r'(?:https?://)?(?:www\.)?([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:com|io|app|co|org|net|ai|cc|dev|sh)(?:\.[a-z]{2})?)',
+                text,
+            )
+            if url_m:
+                found_domain = url_m.group(1).lower()
+                if not any(sk in found_domain for sk in _SKIP_DOMAINS):
+                    domain_clean = found_domain.replace(".", "").replace("-", "")
+                    name_parts = company_name_lower.replace(".", "").replace(" ", "")
+                    if name_parts in domain_clean or domain_clean.split("com")[0] in name_parts:
+                        company.website = f"https://{found_domain}"
+                        break
+
+    # Fallback: use first non-news domain ONLY if it's not a blog/article site
+    if not company.website and candidate_websites:
+        company.website = candidate_websites[0]
+
+    for sig in signals:
+        text = sig.snippet or ""
+
+        # Extract ratings from snippet text
+        if company.app_store_rating is None:
+            m = re.search(r'(\d\.\d)\s*(?:out of 5|/5|stars?|★|rating)', text, re.IGNORECASE)
+            if m:
+                try:
+                    company.app_store_rating = float(m.group(1))
+                except ValueError:
+                    pass
+
+        # Extract download counts — only if company name is mentioned in context
+        if not company.app_downloads and company.name.lower() in text.lower():
+            m = re.search(r'(\d[\d,.]*[MKB]?\+?)\s*(?:downloads?|installs?)', text, re.IGNORECASE)
+            if m:
+                company.app_downloads = m.group(1)
+
+        # Extract user counts — ONLY if the company name appears near the number
+        # to avoid picking up random numbers from listicle articles
+        if not company.user_count:
+            # Pattern: "CompanyName ... X users" or "X users ... CompanyName" within ~100 chars
+            name_lower = company.name.lower()
+            text_lower = text.lower()
+            if name_lower in text_lower:
+                # Find user count mentions with larger numbers (>1000 to skip noise)
+                for um in re.finditer(r'(\d[\d,.]*[MKB]?\+?)\s*(?:users?|customers?|students?|learners?|subscribers?|developers?|MAU|DAU)', text, re.IGNORECASE):
+                    count_str = um.group(1).replace(",", "")
+                    # Check if it's a meaningful count (not tiny noise like "5 users")
+                    try:
+                        raw_num = float(re.sub(r'[MKB+]', '', count_str))
+                        has_suffix = bool(re.search(r'[MKB]', um.group(1), re.IGNORECASE))
+                        if raw_num < 100 and not has_suffix:
+                            continue  # Skip small numbers like "5 users"
+                    except ValueError:
+                        pass
+                    # Check proximity: company name within 150 chars of the number
+                    name_pos = text_lower.find(name_lower)
+                    num_pos = um.start()
+                    if abs(name_pos - num_pos) < 150:
+                        company.user_count = um.group(1) + " " + um.group(0).split()[-1]
+                        break
+
+        # Extract review counts — only if company name is mentioned in context
+        if not company.app_store_reviews and company.name.lower() in text.lower():
+            m = re.search(r'(\d[\d,.]*[KM]?\+?)\s*(?:reviews?|ratings?)', text, re.IGNORECASE)
+            if m:
+                company.app_store_reviews = m.group(1) + " reviews"
+
+        # Extract FUNDING amounts (NOT valuations) — only from snippets mentioning this company
+        if not company.funding_total and company.name.lower() in text.lower():
+            funding_patterns = [
+                r'(?:total\s+)?(?:funding|raised|capital)(?:\s+(?:of|to\s+date|total))?\s*[:=]?\s*\$\s*([\d,.]+)\s*([BMK])',
+                r'(?:raised|secured|closed|received)\s+\$\s*([\d,.]+)\s*([BMK])',
+                r'\$\s*([\d,.]+)\s*([BMK])\s*(?:in\s+)?(?:funding|raised|investment|round|series|seed)',
+            ]
+            best_amount = 0.0
+            best_str = ""
+            for pattern in funding_patterns:
+                for fm in re.finditer(pattern, text, re.IGNORECASE):
+                    # Skip if this is actually a valuation
+                    start = max(0, fm.start() - 30)
+                    context = text[start:fm.end() + 10].lower()
+                    if 'valuat' in context or 'valued at' in context or 'worth' in context:
+                        continue
+                    amount = fm.group(1).replace(",", "")
+                    unit_raw = fm.group(2).strip().upper()
+                    if unit_raw.startswith("BILLION"):
+                        unit = "B"
+                    elif unit_raw.startswith("MILLION"):
+                        unit = "M"
+                    else:
+                        unit = unit_raw[0]
+                    candidate = f"${amount}{unit}"
+                    candidate_val = _parse_funding_numeric(candidate)
+                    if candidate_val > best_amount:
+                        best_amount = candidate_val
+                        best_str = candidate
+            if best_str:
+                company.funding_total = best_str
+                company.funding_numeric = best_amount
+
+        # Extract funding stage — only from snippets mentioning this company
+        if not company.funding_stage and company.name.lower() in text.lower():
+            m = re.search(r'((?:Pre-)?Seed|Series\s+[A-Z]\+?|Angel)\s*(?:round|funding|stage)?', text, re.IGNORECASE)
+            if m:
+                company.funding_stage = m.group(1).strip()
+
+        # Extract founding year — only from snippets mentioning this company
+        if not company.founding_year and company.name.lower() in text.lower():
+            m = re.search(r'(?:founded|established|launched|started)\s+(?:in\s+)?(\d{4})', text, re.IGNORECASE)
+            if m:
+                yr = int(m.group(1))
+                if 1990 <= yr <= 2026:
+                    company.founding_year = yr
+
+        # Extract headquarters — only from snippets mentioning this company
+        if not company.headquarters and company.name.lower() in text.lower():
+            m = re.search(r'(?:based in|headquartered in|headquarters?\s+(?:in|:))\s+([A-Z][a-zA-Z\s,]+?)(?:\.|,?\s+(?:the|a|and|with|is|has|was|that|which)|\s*$)', text)
+            if m:
+                hq = m.group(1).strip().rstrip(",")
+                if len(hq) < 60:
+                    company.headquarters = hq
+
+    # Extend source URLs from signals (don't overwrite existing)
+    existing_urls = set(company.source_urls)
+    for sig in signals:
+        if sig.url and sig.url not in existing_urls:
+            company.source_urls.append(sig.url)
+            existing_urls.add(sig.url)
+    company.source_urls = company.source_urls[:10]
+    company.source_count = len(company.source_urls)
+
+    return company
+
+
+def _enrich_from_profile(company: ExploreCompany, profile: CompanyProfile) -> ExploreCompany:
+    """Enrich an LLM-selected ExploreCompany with data from its CompanyProfile."""
+    company.website = company.website or profile.website
+    company.funding_total = company.funding_total or profile.funding_total
+    company.funding_numeric = _parse_funding_numeric(company.funding_total or profile.funding_total)
+    company.funding_stage = company.funding_stage or profile.funding_stage
+    company.founding_year = company.founding_year or profile.founding_year
+    company.headquarters = company.headquarters or profile.headquarters
+    company.key_investors = company.key_investors or profile.key_investors or []
+    company.description = company.description or profile.description or profile.core_product
+    company.source_count = max(company.source_count, len(profile.raw_sources) if profile.raw_sources else 0)
+    company.source_urls = company.source_urls or profile.raw_sources or []
+    company.app_store_rating = company.app_store_rating or profile.app_store_rating
+    company.app_store_reviews = company.app_store_reviews or profile.app_store_reviews
+    company.app_downloads = company.app_downloads or profile.app_downloads
+    company.user_count = company.user_count or profile.user_count
+    return company
+
+
+def _compute_confidence(c: ExploreCompany) -> float:
+    """Compute confidence from data completeness and quality.
+
+    Tiered scoring: a company with solid core data (name, description, funding)
+    starts at a high baseline. Additional fields boost further.
+    """
+    # Baseline: every company with a name and description starts at 0.30
+    score = 0.30 if (c.description and len(c.description) > 20) else 0.15
+
+    # Tier 1 — core data (each adds significant confidence)
+    if c.funding_total:
+        score += 0.20
+    if c.website:
+        score += 0.10
+    if c.funding_stage:
+        score += 0.08
+
+    # Tier 2 — important context
+    if c.founding_year:
+        score += 0.08
+    if c.headquarters:
+        score += 0.05
+    if c.key_investors:
+        score += 0.05
+
+    # Tier 3 — traction & sources (bonus)
+    if c.app_store_rating is not None or c.app_downloads or c.user_count:
+        score += 0.07
+    if c.source_count >= 2:
+        score += 0.04
+    if c.source_count >= 4:
+        score += 0.03
+
+    return round(min(score, 1.0), 2)
+
+
+def _quick_web_search(query: str, num: int = 5) -> list[dict]:
+    """Fast web search via Serper for secondary enrichment."""
+    settings = get_settings()
+    if not settings.serper_api_key:
+        return []
+    try:
+        resp = httpx.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": settings.serper_api_key},
+            json={"q": query, "num": num},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        return [
+            {"url": r.get("link", ""), "snippet": f"{r.get('title', '')}. {r.get('snippet', '')}"}
+            for r in resp.json().get("organic", [])[:num]
+        ]
+    except Exception as exc:
+        logger.debug("Quick search failed for '%s': %s", query, exc)
+        return []
+
+
+def _verify_and_supplement_companies(companies: list[ExploreCompany], query: str, llm) -> list[ExploreCompany]:
+    """Use a live web search + LLM to verify the company list and add missing major players."""
+    # Step 1: Quick web search for the latest company list in this sector
+    verification_results = _quick_web_search(f"top {query} companies startups funded 2025 2026", num=8)
+    if not verification_results:
+        return companies
+
+    verification_text = "\n".join(
+        f"- {r.get('snippet', '')}" for r in verification_results
+    )
+
+    existing_names = [c.name for c in companies]
+
+    # Step 2: Ask LLM to identify missing major companies from the web results
+    try:
+        class MissingCompanies(BaseModel):
+            companies: list[ExploreCompany] = Field(default_factory=list)
+
+        result = invoke_structured(llm, MissingCompanies, [
+            SystemMessage(content=(
+                "You are given a list of companies already identified for a sector, "
+                "and fresh web search results about that sector. "
+                "Identify ONLY companies that are MISSING from the existing list but clearly "
+                "belong in this sector based on the web results. "
+                "For each missing company, fill in: name, sub_sector, description, "
+                "funding_total, funding_stage, founding_year, headquarters, key_investors, website. "
+                "Use data from the web results. Only add companies you're confident about. "
+                "Return at most 5 missing companies."
+            )),
+            HumanMessage(content=(
+                f"Sector: {query}\n\n"
+                f"EXISTING companies (already in the list):\n{chr(10).join(f'  - {n}' for n in existing_names)}\n\n"
+                f"FRESH WEB SEARCH RESULTS:\n{verification_text}\n\n"
+                f"Which important companies are MISSING from the existing list?"
+            ))
+        ])
+
+        if result.companies:
+            for c in result.companies:
+                # Skip if already exists (fuzzy match)
+                if any(c.name.lower().strip() == n.lower().strip() for n in existing_names):
+                    continue
+                _normalize_funding_str(c)
+                c.confidence = _compute_confidence(c)
+                companies.append(c)
+                existing_names.append(c.name)
+                logger.info("Added missing company from verification: %s", c.name)
+
+    except Exception as exc:
+        logger.warning("Company verification failed: %s", exc)
+
+    return companies
+
+
+def _secondary_enrich(company: ExploreCompany) -> ExploreCompany:
+    """Targeted search to fill missing funding/website/founding/traction data for a single company."""
+    needs_data = (not company.funding_total or not company.website
+                  or not company.founding_year or not company.user_count)
+    if not needs_data:
+        return company
+
+    results = _quick_web_search(f"{company.name} company funding raised founded users crunchbase", num=5)
+    if not results:
+        return company
+
+    for r in results:
+        text = r.get("snippet", "")
+        url = r.get("url", "")
+
+        # Extract website from search result URLs
+        if not company.website and url:
+            parts = url.split("/")
+            domain = parts[2] if len(parts) > 2 else ""
+            if domain and not any(sk in domain for sk in _SKIP_DOMAINS):
+                domain_clean = domain.lower().replace("www.", "").replace("-", "").replace(".", "")
+                name_parts = company.name.lower().replace(".", "").replace(" ", "")
+                if name_parts in domain_clean or (len(name_parts) > 3 and domain_clean.startswith(name_parts[:4])):
+                    company.website = f"https://{domain}"
+
+        # Extract FUNDING from search snippets (NOT valuations)
+        if not company.funding_total:
+            # Patterns that specifically match FUNDING (not valuation)
+            funding_patterns = [
+                r'(?:total\s+)?(?:funding|raised|capital)(?:\s+(?:of|to\s+date|total))?\s*[:=]?\s*\$\s*([\d,.]+)\s*([BMK])',
+                r'(?:raised|secured|closed|received)\s+\$\s*([\d,.]+)\s*([BMK])',
+                r'\$\s*([\d,.]+)\s*([BMK])\s*(?:in\s+)?(?:funding|raised|investment|round|series|seed)',
+            ]
+            # Pattern to DETECT valuations (so we can skip them)
+            valuation_pattern = r'(?:valued?\s+at|valuation\s+(?:of)?|worth)\s+\$\s*([\d,.]+)\s*([BMK])'
+
+            best_amount = 0.0
+            best_str = ""
+            for pattern in funding_patterns:
+                for fm in re.finditer(pattern, text, re.IGNORECASE):
+                    # Check if this match is actually a valuation in context
+                    start = max(0, fm.start() - 30)
+                    context = text[start:fm.end() + 10].lower()
+                    if 'valuat' in context or 'valued at' in context or 'worth' in context:
+                        continue  # Skip valuations
+                    amount = fm.group(1).replace(",", "")
+                    unit_raw = fm.group(2).strip().upper()
+                    if unit_raw.startswith("BILLION"):
+                        unit = "B"
+                    elif unit_raw.startswith("MILLION"):
+                        unit = "M"
+                    else:
+                        unit = unit_raw[0]
+                    candidate = f"${amount}{unit}"
+                    candidate_val = _parse_funding_numeric(candidate)
+                    if candidate_val > best_amount:
+                        best_amount = candidate_val
+                        best_str = candidate
+            if best_str:
+                if best_amount > (company.funding_numeric or 0):
+                    company.funding_total = best_str
+                    company.funding_numeric = best_amount
+
+        # Extract funding stage
+        if not company.funding_stage:
+            m = re.search(r'((?:Pre-)?Seed|Series\s+[A-Z]\+?|Angel)\s*(?:round|funding|stage)?', text, re.IGNORECASE)
+            if m:
+                company.funding_stage = m.group(1).strip()
+
+        # Extract founding year
+        if not company.founding_year:
+            m = re.search(r'(?:founded|established|launched|started)\s+(?:in\s+)?(\d{4})', text, re.IGNORECASE)
+            if m:
+                yr = int(m.group(1))
+                if 1990 <= yr <= 2026:
+                    company.founding_year = yr
+
+        # Extract user/developer count
+        if not company.user_count:
+            user_patterns = [
+                r'(\d[\d,.]*[MKB]?\+?)\s*(?:users?|developers?|customers?|subscribers?|MAU)',
+                r'(?:over|more than|~)\s*(\d[\d,.]*[MKB]?\+?)\s*(?:users?|developers?|customers?)',
+            ]
+            for pattern in user_patterns:
+                m = re.search(pattern, text, re.IGNORECASE)
+                if m:
+                    count = m.group(1)
+                    # Skip tiny numbers
+                    try:
+                        raw = float(re.sub(r'[MKB+,]', '', count))
+                        if raw < 100 and not re.search(r'[MKB]', count, re.IGNORECASE):
+                            continue
+                    except ValueError:
+                        pass
+                    company.user_count = count + " users"
+                    break
+
+    return company
+
+
+def _secondary_enrich_batch(companies: list[ExploreCompany]) -> list[ExploreCompany]:
+    """Run secondary enrichment for companies missing key data, in parallel."""
+    needs_enrichment = [c for c in companies
+                        if not c.funding_total or not c.website
+                        or not c.founding_year or not c.user_count]
+    if not needs_enrichment:
+        return companies
+
+    logger.info("Secondary enrichment: %d/%d companies need data", len(needs_enrichment), len(companies))
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_secondary_enrich, c): c for c in needs_enrichment[:12]}
+        for future in as_completed(futures, timeout=30):
+            try:
+                future.result(timeout=10)
+            except Exception as exc:
+                logger.debug("Secondary enrichment failed: %s", exc)
+
+    # Recompute confidence after enrichment
+    for c in companies:
+        c.confidence = _compute_confidence(c)
+
+    return companies
+
+
+def _normalize_funding_str(company: ExploreCompany) -> None:
+    """Normalize funding_total to compact format: '$1 billion' → '$1B', '$100 million' → '$100M'."""
+    ft = company.funding_total
+    if not ft:
+        return
+    ft_lower = ft.lower().strip()
+    m = re.match(r'\$\s*([\d,.]+)\s*(billion|million|thousand)', ft_lower)
+    if m:
+        amount = m.group(1)
+        unit_map = {"billion": "B", "million": "M", "thousand": "K"}
+        unit = unit_map.get(m.group(2), "")
+        company.funding_total = f"${amount}{unit}"
+    # Also ensure funding_numeric is set
+    if company.funding_total and not company.funding_numeric:
+        company.funding_numeric = _parse_funding_numeric(company.funding_total)
+
+
+def _normalize_sub_sectors(companies: list[ExploreCompany]) -> list[ExploreCompany]:
+    """Normalize sub-sector names: deduplicate singular/plural forms and near-duplicates."""
+    # Count occurrences of each sub-sector (case-insensitive)
+    counts: dict[str, int] = {}
+    canonical: dict[str, str] = {}
+    for c in companies:
+        s = (c.sub_sector or "Unknown").strip()
+        key = s.lower().rstrip("s")  # strip trailing 's' for singular/plural matching
+        if key not in counts:
+            counts[key] = 0
+            canonical[key] = s
+        counts[key] += 1
+        # Prefer the shorter (singular) form, or the one that appears first
+        if len(s) < len(canonical[key]):
+            canonical[key] = s
+
+    # Apply normalized names
+    for c in companies:
+        s = (c.sub_sector or "Unknown").strip()
+        key = s.lower().rstrip("s")
+        c.sub_sector = canonical.get(key, s)
+
+    return companies
+
+
+def _synthesize_explore(state: dict, profiles: list, profiles_text: str, llm) -> ExploreReport:
+    """Two-step explore synthesis: LLM picks relevant companies, code enriches them."""
+    query = state["query"]
+    raw_signals = state.get("raw_signals", [])
+
+    # Build a name→profile lookup for enrichment (keyed by extracted company name)
+    profile_map: dict[str, CompanyProfile] = {}
+    for p in profiles:
+        key = (p.name or "").strip().lower()
+        if key and key != "unknown":
+            # Keep the profile with the most data
+            if key not in profile_map or len(p.raw_sources) > len(profile_map[key].raw_sources):
+                profile_map[key] = p
+
+    # Build name→raw snippets lookup so we can re-extract data missed by the profiler
+    signal_map: dict[str, list] = {}
+    for s in raw_signals:
+        key = s.company_name.strip().lower()
+        signal_map.setdefault(key, []).append(s)
+
+    # Build a rich summary of each profile — include ALL available data so the LLM
+    # can make informed relevance decisions
+    profile_summaries = []
+    for key, p in profile_map.items():
+        parts = [f"Company: {p.name}"]
+        if p.description:
+            parts.append(f"Description: {p.description[:300]}")
+        if p.core_product:
+            parts.append(f"Product: {p.core_product[:200]}")
+        if p.core_technology:
+            parts.append(f"Technology: {p.core_technology[:150]}")
+        if p.sub_sector:
+            parts.append(f"Sub-sector: {p.sub_sector}")
+        if p.website:
+            parts.append(f"Website: {p.website}")
+        if p.funding_total:
+            parts.append(f"Funding: {p.funding_total}")
+        if p.funding_stage:
+            parts.append(f"Stage: {p.funding_stage}")
+        if p.key_investors:
+            parts.append(f"Investors: {', '.join(p.key_investors[:5])}")
+        if p.founding_year:
+            yr = str(p.founding_year)
+            if p.founding_month:
+                yr = f"{p.founding_month} {yr}"
+            parts.append(f"Founded: {yr}")
+        if p.headquarters:
+            parts.append(f"HQ: {p.headquarters}")
+        if p.headcount_estimate:
+            parts.append(f"Team: {p.headcount_estimate}")
+        if p.business_model:
+            parts.append(f"Business model: {p.business_model[:100]}")
+        if p.revenue_indicators:
+            parts.append(f"Revenue: {p.revenue_indicators[:100]}")
+        if p.app_store_rating is not None:
+            rating_str = f"{p.app_store_rating}★"
+            if p.app_store_reviews:
+                rating_str += f" ({p.app_store_reviews})"
+            parts.append(f"Rating: {rating_str}")
+        if p.app_downloads:
+            parts.append(f"Downloads: {p.app_downloads}")
+        if p.user_count:
+            parts.append(f"Users: {p.user_count}")
+        if p.customer_signals:
+            parts.append(f"Customers: {p.customer_signals[:150]}")
+        if p.key_people:
+            people = [f"{kp.get('name', '?')} ({kp.get('title', '?')})" for kp in p.key_people[:3]]
+            parts.append(f"Key people: {', '.join(people)}")
+        if p.recent_news:
+            news = [n.get("title", "") for n in p.recent_news[:2] if n.get("title")]
+            if news:
+                parts.append(f"Recent news: {'; '.join(news)}")
+        if p.operating_status and p.operating_status != "Active":
+            parts.append(f"Status: {p.operating_status}")
+        parts.append(f"Sources: {len(p.raw_sources)} source(s)")
+        profile_summaries.append("\n".join(parts))
+
+    concise_profiles = "\n\n---\n\n".join(profile_summaries)
+
+    # Build explicit list of available company names to prevent hallucination
+    available_names = sorted({p.name for p in profiles if p.name and p.name.strip().lower() != "unknown"})
+    names_list = "\n".join(f"  - {name}" for name in available_names)
+
+    try:
+        # Step 1: LLM selects relevant companies and writes descriptions
+        report = invoke_structured(llm, ExploreReport, [
+            SystemMessage(content=EXPLORE_SYSTEM),
+            HumanMessage(content=(
+                f"Query: {query}\n\n"
+                f"AVAILABLE COMPANIES (select ONLY from this list):\n{names_list}\n\n"
+                f"Company profiles:\n{concise_profiles}"
+            ))
+        ])
+
+        # Step 1b: Validate companies — prefer matches from profiles, but allow
+        # LLM-known companies that have substantial data filled in
+        available_lower = {n.lower() for n in available_names}
+        original_count = len(report.companies)
+        validated = []
+        for c in report.companies:
+            cname = c.name.strip().lower()
+            # Exact match in available list
+            if cname in available_lower:
+                validated.append(c)
+                continue
+            # Fuzzy: check if name is contained in or contains an available name
+            matched = False
+            for avail in available_lower:
+                if cname in avail or avail in cname:
+                    c.name = next(n for n in available_names if n.lower() == avail)
+                    matched = True
+                    break
+            if matched:
+                validated.append(c)
+            # Allow LLM-added companies if they have substantial data (funding or description)
+            elif c.funding_total or (c.description and len(c.description) > 50):
+                logger.info("Accepting LLM-known company not in search results: %s", c.name)
+                validated.append(c)
+            else:
+                logger.warning("Dropping low-data company from explore: %s", c.name)
+        dropped_count = original_count - len(validated)
+        report.companies = validated
+
+        # Step 2: Code-driven enrichment — match each company to its profile
+        enriched = []
+        seen = set()
+        for c in report.companies:
+            name_key = c.name.strip().lower()
+            if name_key in seen:
+                continue
+            seen.add(name_key)
+
+            # Fuzzy match: try exact, then substring, then profile name field
+            profile = profile_map.get(name_key)
+            if not profile:
+                for pkey, p in profile_map.items():
+                    if name_key in pkey or pkey in name_key:
+                        profile = p
+                        break
+            if not profile:
+                for _pkey, p in profile_map.items():
+                    if name_key in (p.name or "").lower():
+                        profile = p
+                        break
+
+            if profile:
+                c = _enrich_from_profile(c, profile)
+
+            # Also extract from raw snippets (catches data profiler missed)
+            signals = signal_map.get(name_key, [])
+            if not signals:
+                # Fuzzy match signals by key name
+                for skey, sigs in signal_map.items():
+                    if name_key in skey or skey in name_key:
+                        signals = sigs
+                        break
+            if not signals:
+                # Search ALL signal snippets for mentions of this company
+                # (catches data from listicle/comparison articles)
+                for _skey, sigs in signal_map.items():
+                    for sig in sigs:
+                        if name_key in (sig.snippet or "").lower():
+                            signals.append(sig)
+            if signals:
+                c = _extract_from_snippets(c, signals)
+
+            # Step 3: Normalize and compute confidence
+            _normalize_funding_str(c)
+            c.confidence = _compute_confidence(c)
+            enriched.append(c)
+
+        # If hallucination filtering dropped companies and left too few, fill from profiles
+        enriched_names = {c.name.strip().lower() for c in enriched}
+        if dropped_count > 0 and len(enriched) < 5:
+            for key, p in profile_map.items():
+                if key in enriched_names or key == "unknown":
+                    continue
+                c = ExploreCompany(
+                    name=p.name or "Unknown",
+                    sub_sector=p.sub_sector or "Unknown",
+                )
+                c = _enrich_from_profile(c, p)
+                sigs = signal_map.get(key, [])
+                if not sigs:
+                    for skey, s_list in signal_map.items():
+                        if key in skey or skey in key:
+                            sigs = s_list
+                            break
+                if not sigs:
+                    for _skey, s_list in signal_map.items():
+                        for sig in s_list:
+                            if key in (sig.snippet or "").lower():
+                                sigs.append(sig)
+                if sigs:
+                    c = _extract_from_snippets(c, sigs)
+                c.confidence = _compute_confidence(c)
+                enriched.append(c)
+                enriched_names.add(key)
+                if len(enriched) >= 15:
+                    break
+
+        # Post-processing: filter out non-companies and irrelevant entries
+        enriched = [c for c in enriched if not _is_non_company(c.name, c.website)]
+        # Filter: if a company's sub_sector doesn't share any keywords with the query,
+        # and it has no funding data, it's likely off-topic noise
+        query_words = set(query.lower().split())
+        for c in enriched[:]:
+            sector_words = set((c.sub_sector or "").lower().split())
+            # Check if sub_sector overlaps with query at all
+            overlap = query_words & sector_words
+            if not overlap and not c.funding_total and (c.confidence or 0) < 0.5:
+                logger.info("Removing off-topic company %s (sub_sector=%s, no funding)", c.name, c.sub_sector)
+                enriched.remove(c)
+        enriched = _secondary_enrich_batch(enriched)
+        # Re-filter after enrichment (wrong websites may now be detected)
+        enriched = [c for c in enriched if not _is_non_company(c.name, c.website)]
+
+        # Verify against live web data and add missing major companies
+        enriched = _verify_and_supplement_companies(enriched, query, llm)
+        enriched = [c for c in enriched if not _is_non_company(c.name, c.website)]
+
+        enriched = _normalize_sub_sectors(enriched)
+        # Re-sort by funding (descending) then confidence
+        enriched.sort(key=lambda c: (c.funding_numeric or 0, c.confidence or 0), reverse=True)
+        report.companies = enriched[:15]
+        # Update report sub_sectors to match normalized companies
+        report.sub_sectors = list({c.sub_sector for c in report.companies if c.sub_sector and c.sub_sector != "Unknown"})
+    except Exception as exc:
+        logger.error("Explore synthesis failed for query=%s: %s — building from profiles", query, exc)
+        # Fallback: build directly from profiles
+        enriched = []
+        seen = set()
+        for key, p in profile_map.items():
+            if key in seen:
+                continue
+            seen.add(key)
+            c = ExploreCompany(
+                name=p.name or "Unknown",
+                sub_sector=p.sub_sector or "Unknown",
+            )
+            c = _enrich_from_profile(c, p)
+            signals = signal_map.get(key, [])
+            if not signals:
+                for skey, sigs in signal_map.items():
+                    if key in skey or skey in key:
+                        signals = sigs
+                        break
+            if not signals:
+                for _skey, sigs in signal_map.items():
+                    for sig in sigs:
+                        if key in (sig.snippet or "").lower():
+                            signals.append(sig)
+            if signals:
+                c = _extract_from_snippets(c, signals)
+            c.confidence = _compute_confidence(c)
+            enriched.append(c)
+        enriched.sort(key=lambda x: x.confidence, reverse=True)
+        enriched = enriched[:15]
+        sub_sectors = list({c.sub_sector for c in enriched if c.sub_sector and c.sub_sector != "Unknown"})
+        report = ExploreReport(
+            query=query,
+            sector=query,
+            companies=enriched,
+            sub_sectors=sub_sectors,
+            summary="Report generated from raw profile data (LLM synthesis unavailable).",
+            citations=[],
+        )
+
+    return report
+
+
 def synthesize(state: dict) -> dict:
     settings = get_settings()
     llm_extraction = get_llm(settings.extraction_model)
@@ -496,59 +1296,7 @@ def synthesize(state: dict) -> dict:
     )
 
     if mode == "explore":
-        try:
-            report = invoke_structured(llm_extraction, ExploreReport, [
-                SystemMessage(content=EXPLORE_SYSTEM),
-                HumanMessage(content=f"Query: {state['query']}\n\nCompany profiles:\n{profiles_text}")
-            ])
-            # Post-process: deduplicate and limit
-            seen = set()
-            deduped = []
-            for c in report.companies:
-                key = c.name.strip().lower()
-                if key not in seen:
-                    seen.add(key)
-                    deduped.append(c)
-            report.companies = deduped[:20]
-        except Exception as exc:
-            logger.error("Synthesis LLM call failed for query=%s mode=%s: %s — building fallback report from profiles", state['query'], mode, exc)
-            # Graceful degradation: build a minimal ExploreReport from raw profiles
-            fallback_companies = []
-            seen_names = set()
-            for p in profiles:
-                name = (p.name or "Unknown").strip()
-                name_lower = name.lower()
-                if name_lower in seen_names or name_lower == "unknown":
-                    continue
-                seen_names.add(name_lower)
-                fallback_companies.append(ExploreCompany(
-                    name=name,
-                    sub_sector=p.sub_sector or "Unknown",
-                    website=p.website,
-                    funding_total=p.funding_total,
-                    funding_numeric=_parse_funding_numeric(p.funding_total),
-                    funding_stage=p.funding_stage,
-                    founding_year=p.founding_year,
-                    headquarters=p.headquarters,
-                    key_investors=p.key_investors or [],
-                    description=p.description or p.core_product,
-                    confidence=p.funding_confidence if p.funding_confidence else 0.2,
-                    source_count=len(p.raw_sources) if p.raw_sources else 0,
-                    app_store_rating=p.app_store_rating,
-                    app_store_reviews=p.app_store_reviews,
-                    app_downloads=p.app_downloads,
-                    user_count=p.user_count,
-                ))
-            fallback_companies = fallback_companies[:20]
-            sub_sectors = list({c.sub_sector for c in fallback_companies if c.sub_sector and c.sub_sector != "Unknown"})
-            report = ExploreReport(
-                query=state["query"],
-                sector=state["query"],
-                companies=fallback_companies,
-                sub_sectors=sub_sectors,
-                summary="Report generated from raw profile data (LLM synthesis unavailable).",
-                citations=[],
-            )
+        report = _synthesize_explore(state, profiles, profiles_text, llm_extraction)
         return {"report": report}
 
     # --- Deep-dive: parallel synthesis ---
