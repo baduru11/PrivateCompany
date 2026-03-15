@@ -18,6 +18,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { NumberTicker } from "../ui/number-ticker";
 import { BorderBeam } from "../ui/border-beam";
+import { ChatPanel } from "../chat/ChatPanel";
 import { cn } from "../../lib/utils";
 
 function matchesStage(company, stages) {
@@ -201,6 +202,7 @@ export default function ExploreView({ data, onDeepDive }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [viewMode, setViewMode] = useState("graph");
   const [summaryExpanded, setSummaryExpanded] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState({
     subSectors: [],
     stages: [],
@@ -274,6 +276,7 @@ export default function ExploreView({ data, onDeepDive }) {
 
   const sectorName = data?.report?.sector || data?.sector || data?.report?.query || data?.query || "Market Landscape";
   const summary = data?.report?.summary || data?.summary || "";
+  const reportId = data?.report_id || "";
 
   const handleNodeClick = useCallback((node) => {
     setSelectedCompany(node);
@@ -448,6 +451,16 @@ export default function ExploreView({ data, onDeepDive }) {
           onDeepDive={handleDeepDive}
         />
       </div>
+
+      {/* Chat panel — ask questions about the sector landscape */}
+      {reportId && (
+        <ChatPanel
+          reportId={reportId}
+          companyName={sectorName}
+          isOpen={chatOpen}
+          onToggle={() => setChatOpen((o) => !o)}
+        />
+      )}
     </div>
   );
 }
